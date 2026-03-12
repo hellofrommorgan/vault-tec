@@ -1,0 +1,24 @@
+{
+  "name": "vault-tec",
+  "version": "0.7.0",
+  "description": "Obsidian vault forge: creates and seeds agent-native knowledge architectures. 15 kernel primitives, 8 feature generators, 7 skills, 10 commands, 7 hooks backed by 83 consolidated cognitive science research claims across 6 domains. Runtime health tracking, test-driven knowledge work, friction diagnostics, session bookends, and reconciliation loops. Vault-as-runtime architecture.",
+  "author": {
+    "name": "Agentic Note-Taking"
+  },
+  "keywords": [
+    "obsidian",
+    "knowledge-management",
+    "vault",
+    "research",
+    "zettelkasten",
+    "cognitive-architecture",
+    "agent-native",
+    "second-brain",
+    "runtime",
+    "test-driven",
+    "friction-diagnostics",
+    "reconciliation"
+  ],
+  "license": "MIT",
+  "repository": "https://github.com/agenticnotetaking/vault-tec"
+}
