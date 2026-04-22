@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "revision": 0,
+  "revision": 1,
   "issues": [
     {
       "id": "F1",
       "identifier": "F1",
       "title": "verify-sh-green",
-      "description": "Lane: L1+L2+L3 (meta — passes only when all lanes pass).\n\nVerification (from score.json feature id=1):\n- ./verify.sh exits 0\n- all shellcheck checks clean\n- all frontmatter checks clean\n- no dangling CLAUDE_PLUGIN_ROOT refs\n- hooks/hooks.json valid JSON\n\nGate: `./.score/score verify 1`",
+      "description": "Lane: L1+L2+L3 (meta \u2014 passes only when all lanes pass).\n\nVerification (from score.json feature id=1):\n- ./verify.sh exits 0\n- all shellcheck checks clean\n- all frontmatter checks clean\n- no dangling CLAUDE_PLUGIN_ROOT refs\n- hooks/hooks.json valid JSON\n\nGate: `./.score/score verify 1`",
       "priority": 1,
-      "state": "todo",
+      "state": "done",
       "branch_name": null,
       "url": null,
       "labels": [
@@ -17,8 +17,22 @@
       ],
       "blocked_by": [],
       "created_at": null,
-      "updated_at": null,
-      "transitions": []
+      "updated_at": "2026-04-22T15:11:48Z",
+      "transitions": [
+        {
+          "at": "2026-04-22T15:09:56.430Z",
+          "from": "todo",
+          "to": "in_progress",
+          "reason": "agent run completed attempt=7 worker=w5 session=485dc841-832c-49da-b15f-64523d93a97d",
+          "actor": "agent"
+        },
+        {
+          "from": "in_progress",
+          "to": "done",
+          "at": "2026-04-22T15:11:48Z",
+          "reason": "verify green, committed 7116413"
+        }
+      ]
     },
     {
       "id": "F2",
