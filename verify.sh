@@ -10,6 +10,7 @@ FAIL_SHELLCHECK=0
 FAIL_FRONTMATTER=0
 FAIL_DANGLING=0
 FAIL_HOOKS_JSON=0
+FAIL_COPILOT_EXT=0
 WIKI_BROKEN=0
 
 RED=$'\033[0;31m'
@@ -206,7 +207,36 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON))
+section "6. Copilot CLI extension: node --check + scripts symlink"
+if [ -f copilot-extension/extension.mjs ]; then
+  if command -v node >/dev/null 2>&1; then
+    if node --check copilot-extension/extension.mjs 2>/dev/null; then
+      ok "copilot-extension/extension.mjs parses as ESM"
+    else
+      bad "copilot-extension/extension.mjs has syntax errors"
+      node --check copilot-extension/extension.mjs 2>&1 | sed 's/^/    /'
+      FAIL_COPILOT_EXT=1
+    fi
+  else
+    warn "node not installed — skipping copilot-extension syntax check"
+  fi
+  if [ -L copilot-extension/scripts ]; then
+    target=$(readlink copilot-extension/scripts)
+    if [ -d copilot-extension/scripts/ ] && ls copilot-extension/scripts/vault-pretooluse.sh >/dev/null 2>&1; then
+      ok "copilot-extension/scripts symlink resolves ($target)"
+    else
+      bad "copilot-extension/scripts symlink does not resolve to hooks/scripts"
+      FAIL_COPILOT_EXT=1
+    fi
+  else
+    warn "copilot-extension/scripts is not a symlink"
+  fi
+else
+  warn "no copilot-extension/extension.mjs — skipping"
+fi
+
+# ---------------------------------------------------------------------------
+TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON + FAIL_COPILOT_EXT))
 
 printf "\n"
 printf "=========================================\n"
@@ -216,11 +246,12 @@ printf "  shellcheck        : %s\n"  "$([ $FAIL_SHELLCHECK  = 0 ] && echo PASS |
 printf "  frontmatter       : %s\n"  "$([ $FAIL_FRONTMATTER = 0 ] && echo PASS || echo FAIL)"
 printf "  plugin-root refs  : %s\n"  "$([ $FAIL_DANGLING    = 0 ] && echo PASS || echo FAIL)"
 printf "  hooks.json        : %s\n"  "$([ $FAIL_HOOKS_JSON  = 0 ] && echo PASS || echo FAIL)"
+printf "  copilot-extension : %s\n"  "$([ $FAIL_COPILOT_EXT = 0 ] && echo PASS || echo FAIL)"
 printf "  wiki-links (info) : %d broken\n" "$WIKI_BROKEN"
 printf "=========================================\n"
 
 if [ "$TOTAL_FAIL" = "0" ]; then
-  printf "${GRN}✅ PASSED${RST} (gating checks: 4/4)\n"
+  printf "${GRN}✅ PASSED${RST} (gating checks: 5/5)\n"
   exit 0
 else
   printf "${RED}❌ FAILED${RST} (%d gating check(s) failed)\n" "$TOTAL_FAIL"

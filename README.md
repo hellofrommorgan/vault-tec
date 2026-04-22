@@ -37,6 +37,29 @@ Then run the interactive setup to configure vault-tec for your environment:
 /vault-tec:setup
 ```
 
+### GitHub Copilot CLI (optional)
+
+vault-tec also runs inside [GitHub Copilot CLI](https://github.com/github/copilot-cli) via a Node adapter that shells out to the same bash hooks. `/vault-tec:setup` detects Copilot CLI and offers to install it; or install manually:
+
+```bash
+mkdir -p ~/.copilot/extensions/vault-tec
+cp copilot-extension/extension.mjs ~/.copilot/extensions/vault-tec/
+ln -sfn "$PWD/hooks/scripts" ~/.copilot/extensions/vault-tec/scripts
+```
+
+| Claude Code hook       | Copilot CLI hook         | Status          |
+|------------------------|--------------------------|-----------------|
+| PreToolUse             | `onPreToolUse`           | ✅ direct       |
+| PostToolUse            | `onPostToolUse`          | ✅ direct       |
+| PostToolUseFailure     | `onPostToolUse` (guard)  | ✅ routed       |
+| SessionStart           | `onSessionStart`         | ✅ direct       |
+| SessionEnd             | `onSessionEnd`           | ✅ direct       |
+| UserPromptSubmit       | `onUserPromptSubmitted`  | ✅ direct       |
+| PreCompact             | *(none in Copilot)*      | 🟡 emulated via `vault_tec_preserve_state` tool |
+| *(new)*                | `onErrorOccurred`        | ✅ routed to post-tool-use handler |
+
+See [`copilot-extension/README.md`](./copilot-extension/README.md) for adapter design details.
+
 ---
 
 ## Quick Start
