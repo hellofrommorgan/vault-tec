@@ -216,7 +216,7 @@ check_power_armor() {
 
   # Collect all wiki links in the vault (notes + self)
   grep -roh '\[\[[^]]*\]\]' "$NOTES_DIR" 2>/dev/null | sort -u > "$link_cache"
-  grep -roh '\[\[[^]]*\]\]' "$VAULT/self" 2>/dev/null >> "$link_cache" 2>/dev/null || true
+  grep -roh '\[\[[^]]*\]\]' "$VAULT/self" >> "$link_cache" 2>/dev/null || true
 
   while IFS= read -r filepath; do
     local filename
