@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "revision": 1,
+  "revision": 3,
   "issues": [
     {
       "id": "F1",
       "identifier": "F1",
       "title": "verify-sh-green",
-      "description": "Lane: L1+L2+L3 (meta \u2014 passes only when all lanes pass).\n\nVerification (from score.json feature id=1):\n- ./verify.sh exits 0\n- all shellcheck checks clean\n- all frontmatter checks clean\n- no dangling CLAUDE_PLUGIN_ROOT refs\n- hooks/hooks.json valid JSON\n\nGate: `./.score/score verify 1`",
+      "description": "Lane: L1+L2+L3 (meta — passes only when all lanes pass).\n\nVerification (from score.json feature id=1):\n- ./verify.sh exits 0\n- all shellcheck checks clean\n- all frontmatter checks clean\n- no dangling CLAUDE_PLUGIN_ROOT refs\n- hooks/hooks.json valid JSON\n\nGate: `./.score/score verify 1`",
       "priority": 1,
       "state": "done",
       "branch_name": null,
@@ -30,7 +30,8 @@
           "from": "in_progress",
           "to": "done",
           "at": "2026-04-22T15:11:48Z",
-          "reason": "verify green, committed 7116413"
+          "reason": "verify green, committed 7116413",
+          "actor": "agent"
         }
       ]
     },
@@ -40,7 +41,7 @@
       "title": "hooks-shellcheck-clean",
       "description": "Lane: L1 (shellcheck cleanliness).\nKnown issue: SC2261 in hooks/scripts/vault-bobbleheads.sh:219 (duplicate stderr redirect).\n\nVerification (from score.json feature id=2):\n- shellcheck zero errors on all hooks/scripts/*.sh\n- no SC2086 quoting bugs\n- no SC2155 assignment masking\n\nGate: `./.score/score verify 2`",
       "priority": 2,
-      "state": "todo",
+      "state": "done",
       "branch_name": null,
       "url": null,
       "labels": [
@@ -50,7 +51,22 @@
       "blocked_by": [],
       "created_at": null,
       "updated_at": null,
-      "transitions": []
+      "transitions": [
+        {
+          "at": "2026-04-22T15:17:30Z",
+          "from": "todo",
+          "to": "in_progress",
+          "reason": "operator: F2 subsumed by F1 verify-sh-green meta",
+          "actor": "operator"
+        },
+        {
+          "at": "2026-04-22T15:17:30Z",
+          "from": "in_progress",
+          "to": "done",
+          "reason": "verify 2 PASS (score verify runs global suite, same gate as F1)",
+          "actor": "operator"
+        }
+      ]
     },
     {
       "id": "F3",
@@ -58,7 +74,7 @@
       "title": "frontmatter-lint-clean",
       "description": "Lane: L2 (frontmatter discipline).\n\nVerification (from score.json feature id=3):\n- all commands/*.md have required YAML keys\n- all skills/SKILL.md have required keys\n- all agents/*.md have required keys\n- no malformed frontmatter blocks\n\nGate: `./.score/score verify 3`",
       "priority": 3,
-      "state": "todo",
+      "state": "done",
       "branch_name": null,
       "url": null,
       "labels": [
@@ -68,7 +84,22 @@
       "blocked_by": [],
       "created_at": null,
       "updated_at": null,
-      "transitions": []
+      "transitions": [
+        {
+          "at": "2026-04-22T15:17:30Z",
+          "from": "todo",
+          "to": "in_progress",
+          "reason": "operator: F3 subsumed by F1 verify-sh-green meta",
+          "actor": "operator"
+        },
+        {
+          "at": "2026-04-22T15:17:30Z",
+          "from": "in_progress",
+          "to": "done",
+          "reason": "verify 3 PASS (score verify runs global suite, same gate as F1)",
+          "actor": "operator"
+        }
+      ]
     }
   ],
   "claims": [],
