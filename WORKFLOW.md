@@ -46,12 +46,12 @@ allowed_agent_transitions:
 
 hooks:
   before_run:
-    - run: "echo '━━━ orchestra: starting {{ issue.identifier }} turn {{ turn }} ━━━'"
+    - run: "echo '--- orchestra: starting issue (cwd is worktree) ---'"
       timeout_ms: 5000
-    - run: "cd {{ workspace }} && ./.score/score status --brief"
+    - run: "./.score/score status --brief"
       timeout_ms: 15000
   after_run:
-    - run: "cd {{ workspace }} && git status --short"
+    - run: "git status --short"
       timeout_ms: 5000
 
 dashboard:

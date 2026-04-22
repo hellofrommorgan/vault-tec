@@ -11,7 +11,10 @@
       "state": "todo",
       "branch_name": null,
       "url": null,
-      "labels": ["lane-meta", "harness-hardening"],
+      "labels": [
+        "lane-meta",
+        "harness-hardening"
+      ],
       "blocked_by": [],
       "created_at": null,
       "updated_at": null,
@@ -26,7 +29,10 @@
       "state": "todo",
       "branch_name": null,
       "url": null,
-      "labels": ["lane-L1", "harness-hardening"],
+      "labels": [
+        "lane-L1",
+        "harness-hardening"
+      ],
       "blocked_by": [],
       "created_at": null,
       "updated_at": null,
@@ -41,7 +47,10 @@
       "state": "todo",
       "branch_name": null,
       "url": null,
-      "labels": ["lane-L2", "harness-hardening"],
+      "labels": [
+        "lane-L2",
+        "harness-hardening"
+      ],
       "blocked_by": [],
       "created_at": null,
       "updated_at": null,
@@ -55,6 +64,11 @@
     "season": "vault-harness-v1",
     "canonical_repo": "/Users/morgan/Projects/vault-tec",
     "season_branch": "auto/season-20260422-144922-vault-harness-v1",
-    "defer_until_later": ["F4-wiki-search-cli", "F5-ask-the-wiki-prototype", "F6-pdf-ingest-skill", "F7-raw-compile-command"]
+    "defer_until_later": [
+      "F4-wiki-search-cli",
+      "F5-ask-the-wiki-prototype",
+      "F6-pdf-ingest-skill",
+      "F7-raw-compile-command"
+    ]
   }
 }
