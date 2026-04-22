@@ -1,0 +1,103 @@
+{
+  "project": "vault-tec",
+  "intent": "Agent-native Obsidian knowledge vaults with research-backed quality enforcement",
+  "vision": "Cognitive-science-grounded substrate for personal knowledge bases; closing the gap to an end-to-end LLM knowledge OS (raw → wiki → Q&A → multi-format output → fileback).",
+  "test_command": "./verify.sh",
+  "features": [
+    {
+      "id": 1,
+      "name": "verify-sh-green",
+      "priority": 1,
+      "verification": [
+        "./verify.sh exits 0",
+        "all shellcheck checks clean",
+        "all frontmatter checks clean",
+        "no dangling CLAUDE_PLUGIN_ROOT refs",
+        "hooks/hooks.json valid JSON"
+      ],
+      "passes": false,
+      "depends_on": []
+    },
+    {
+      "id": 2,
+      "name": "hooks-shellcheck-clean",
+      "priority": 2,
+      "verification": [
+        "shellcheck zero errors on all hooks/scripts/*.sh",
+        "no SC2086 quoting bugs",
+        "no SC2155 assignment masking"
+      ],
+      "passes": false,
+      "depends_on": []
+    },
+    {
+      "id": 3,
+      "name": "frontmatter-lint-clean",
+      "priority": 3,
+      "verification": [
+        "all commands/*.md have required YAML keys",
+        "all skills/SKILL.md have required keys",
+        "all agents/*.md have required keys",
+        "no malformed frontmatter blocks"
+      ],
+      "passes": false,
+      "depends_on": []
+    },
+    {
+      "id": 4,
+      "name": "wiki-search-cli",
+      "priority": 4,
+      "verification": [
+        "bin/vault-search script exists and is executable",
+        "accepts query arg and vault path arg",
+        "returns ranked results as JSON",
+        "integrated as callable tool for LLM",
+        "documented in README"
+      ],
+      "passes": false,
+      "depends_on": []
+    },
+    {
+      "id": 5,
+      "name": "ask-the-wiki-prototype",
+      "priority": 5,
+      "verification": [
+        "commands/query.md exists with valid frontmatter",
+        "prompt reads vault MOCs and top-level summaries",
+        "returns structured answer with source citations",
+        "different from commands/ask.md which queries methodology research"
+      ],
+      "passes": false,
+      "depends_on": []
+    },
+    {
+      "id": 6,
+      "name": "pdf-ingest-skill",
+      "priority": 6,
+      "verification": [
+        "skills/pdf-ingest/SKILL.md exists",
+        "extracts text via pdftotext or equivalent",
+        "produces atomic-note drafts for each key concept",
+        "creates a source-note with citation metadata",
+        "flags paywalled/low-confidence sections"
+      ],
+      "passes": false,
+      "depends_on": []
+    },
+    {
+      "id": 7,
+      "name": "raw-compile-command",
+      "priority": 7,
+      "verification": [
+        "commands/compile.md exists",
+        "reads ops/raw/ or raw/ dir",
+        "produces atomic notes tagged status:seed",
+        "builds topic MOC",
+        "connection weaving ≥2 links/note",
+        "reports orphan count"
+      ],
+      "passes": false,
+      "depends_on": []
+    }
+  ]
+}
