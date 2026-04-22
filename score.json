@@ -15,7 +15,7 @@
         "no dangling CLAUDE_PLUGIN_ROOT refs",
         "hooks/hooks.json valid JSON"
       ],
-      "passes": false,
+      "passes": true,
       "depends_on": []
     },
     {
