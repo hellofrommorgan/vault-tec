@@ -290,6 +290,30 @@ If any hooks were enabled, read `~/.claude/settings.json`, merge the hook defini
 
 Ask before modifying settings.json: "I'll need to add these to your Claude Code settings. Mind if I do that automatically?"
 
+### 2b. Install Copilot CLI extension (optional)
+
+**Detect:** does `~/.copilot/` exist? (GitHub Copilot CLI installed)
+
+**If yes**, offer:
+> "I can also wire vault-tec into your GitHub Copilot CLI — same hooks, same vault awareness, but through the Copilot extension system. Want me to install that too?"
+
+**If the user agrees**, do:
+
+```bash
+mkdir -p ~/.copilot/extensions/vault-tec
+cp "$VAULT_TEC_DIR/copilot-extension/extension.mjs" ~/.copilot/extensions/vault-tec/extension.mjs
+ln -sfn "$VAULT_TEC_DIR/hooks/scripts" ~/.copilot/extensions/vault-tec/scripts
+```
+
+Why a copy for `extension.mjs` (not symlink): Copilot CLI's discovery doesn't follow symlinked **directories** — the extension must live in a real directory named `vault-tec/`. But the `scripts/` subdirectory can be a symlink, which keeps it auto-updating against the plugin source.
+
+**Notes to mention to the user:**
+- vault-tec respects Copilot's different hook semantics — notably, there is no `onPreCompact` hook, so we register a `vault_tec_preserve_state` tool that the agent calls instead.
+- Only writes inside `$VAULT_PATH/notes/*.md` trigger hooks. Other tool calls are pre-filtered to avoid subprocess spawns.
+- Reload via `/plugin` or next `copilot` launch.
+
+**Verify:** ask them to run `copilot` then `/env` — `vault-tec` should show in the extensions list.
+
 ### 3. Show the closing summary
 
 ```
@@ -308,6 +332,7 @@ Ask before modifying settings.json: "I'll need to add these to your Claude Code 
 ║  Bobbleheads: <on/off>                                               ║
 ║  Rad Counter: <preset>                                               ║
 ║  Security:    <N>/6 systems active                                   ║
+║  Copilot CLI: <installed/skipped>                                    ║
 ║                                                                      ║
 ║  Config: ~/.vault-tec/config.sh                                      ║
 ║                                                                      ║

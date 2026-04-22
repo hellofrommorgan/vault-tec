@@ -98,6 +98,22 @@
       ],
       "passes": false,
       "depends_on": []
+    },
+    {
+      "id": 8,
+      "name": "copilot-cli-parity",
+      "priority": 8,
+      "verification": [
+        "copilot-extension/extension.mjs exists and parses as ESM (node --check)",
+        "copilot-extension/scripts symlinks to hooks/scripts/",
+        "all 7 vault-tec hooks are wired via the adapter (6 direct + 1 emulated)",
+        "vault_tec_preserve_state tool registered as onPreCompact emulation",
+        "JS pre-filter gates bash subprocess spawns to writer tools on vault notes",
+        "/vault-tec:setup has Copilot install phase (step 2b)",
+        "extension loads via extensions_manage inspect (status: running)"
+      ],
+      "passes": true,
+      "depends_on": [1]
     }
   ]
 }
