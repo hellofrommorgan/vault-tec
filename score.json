@@ -294,6 +294,28 @@
         12,
         15
       ]
+    },
+    {
+      "id": 17,
+      "name": "hermes-session-digest-option-d-plus",
+      "priority": 17,
+      "verification": [
+        "bin/vault-ingest-hermes-session supports --mode={raw,digest,both}; default remains 'raw' (F16 backward compat)",
+        "digest mode is PURELY EXTRACTIVE — no LLM calls, offline-safe for cron",
+        "digest filename deterministic: session-digest-<stem>-<ext>.md, distinct from raw transcript",
+        "digest body contains role_counts, tools_used (extracted from role=tool name + assistant tool_calls + content tool_use parts), first_user_message excerpt (~500 chars), final_assistant_message excerpt (~500 chars), approx_char_count, session metadata",
+        "digest contains NO wall-clock / ingested_at / digested_at timestamp fields — sha-idempotent across re-runs (byte-identical)",
+        "topics section reserved and empty — no fabrication; deterministic compile step may fill later",
+        "both mode emits raw + digest with distinct filenames into ops/inbox/ only",
+        "after drain, digest lands in ops/raw/ with provenance frontmatter; re-ingest + re-drain produces zero additional raw entries",
+        "scripts/hermes-vault-cron.sh invokes --mode=both so cron produces raw + digest in lockstep",
+        "tests/test_hermes_session_digest.sh exits 0; wired as verify.sh gate #17 (16/16 new green bar)"
+      ],
+      "passes": true,
+      "depends_on": [
+        15,
+        16
+      ]
     }
   ]
 }

@@ -47,8 +47,8 @@ if [ -d "$SESSIONS_DIR" ]; then
     case "$(basename "$S")" in
       sessions.json) continue ;;
     esac
-    OUT="$("$REPO/bin/vault-ingest-hermes-session" "$S" "$VAULT" 2>/dev/null || true)"
-    if [ -n "$OUT" ] && [ -f "$OUT" ]; then
+    OUT="$("$REPO/bin/vault-ingest-hermes-session" --mode=both "$S" "$VAULT" 2>/dev/null || true)"
+    if [ -n "$OUT" ]; then
       INGESTED_SESSIONS=$((INGESTED_SESSIONS + 1))
       log INGEST "$(basename "$S")"
     else
