@@ -8,8 +8,8 @@ VTCONFIG="$HOME/.vault-tec/config.sh"
 VAULT="${VAULT_PATH:-}"
 [ -z "$VAULT" ] && exit 0
 
-# Detect vault: check for CLAUDE.md + self/ + notes/
-if [ ! -f "$VAULT/CLAUDE.md" ] || [ ! -d "$VAULT/self" ] || [ ! -d "$VAULT/notes" ]; then
+# Detect vault: check for CLAUDE.md or AGENTS.md + self/ + notes/
+if { [ ! -f "$VAULT/CLAUDE.md" ] && [ ! -f "$VAULT/AGENTS.md" ]; } || [ ! -d "$VAULT/self" ] || [ ! -d "$VAULT/notes" ]; then
   exit 0
 fi
 

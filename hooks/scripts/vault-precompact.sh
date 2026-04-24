@@ -11,7 +11,7 @@ VAULT="${VAULT_PATH:-}"
 INPUT=$(cat 2>/dev/null || echo '{}')
 
 # Detect vault
-if [ ! -f "$VAULT/CLAUDE.md" ]; then
+if [ ! -f "$VAULT/CLAUDE.md" ] && [ ! -f "$VAULT/AGENTS.md" ]; then
   exit 0
 fi
 

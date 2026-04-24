@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# bin/vault-search <vault-root> <query>
+#
+# Zero-dependency line-oriented search over a vault's COMPILED knowledge
+# surfaces (notes/ and notes/*-MOC.md). Does NOT read ops/raw/ — raw is
+# ingress, not canonical wiki state. The compiled wiki is the truth surface.
+#
+# Honest scope:
+#   - plain substring/regex search via grep -nE
+#   - output: relative-path:line:content
+#   - exit 0 on hits, 1 on no hits, 2 on misuse / empty vault
+#   - P10: fail loud on stderr when vault has no compiled notes
+#
+# Out of scope for this slice: ranking, frontmatter-aware filters, JSON,
+# semantic embeddings, agent-facing /query contract. Those are follow-on
+# slices. This CLI is the runtime witness for the "queried" step of the
+# North Star loop.
+#
+# Usage:
+#   bin/vault-search <vault-root> <query>
+# Example:
+#   bin/vault-search ~/my-vault "retrieval practice"
+
+set -euo pipefail
+
+# optional --context N (emit ±N surrounding lines around each hit).
+# Default 0 = current line-oriented behaviour (backward compatible).
+CONTEXT=0
+if [ $# -gt 0 ] && [ "$1" = "--context" ]; then
+  if [ $# -lt 2 ]; then
+    echo "usage: $0 [--context N] <vault-root> <query>" >&2
+    exit 2
+  fi
+  case "$2" in
+    ''|*[!0-9]*)
+      echo "vault-search: --context expects a non-negative integer, got '$2'" >&2
+      exit 2
+      ;;
+  esac
+  CONTEXT="$2"
+  shift 2
+fi
+
+if [ $# -ne 2 ]; then
+  echo "usage: $0 [--context N] <vault-root> <query>" >&2
+  exit 2
+fi
+
+VAULT="$1"
+QUERY="$2"
+NOTES="$VAULT/notes"
+
+if [ ! -d "$NOTES" ]; then
+  echo "vault-search: no compiled notes found under $NOTES; run /compile first (P10)" >&2
+  exit 2
+fi
+
+# any notes at all?
+if ! find "$NOTES" -maxdepth 3 -type f -name '*.md' | head -1 | grep -q .; then
+  echo "vault-search: $NOTES is empty; nothing to search (run /compile first)" >&2
+  exit 2
+fi
+
+if [ -z "$QUERY" ]; then
+  echo "vault-search: empty query" >&2
+  exit 2
+fi
+
+# search: recurse notes/, match QUERY as an extended-regex, case-insensitive,
+# print path:line:content with line numbers. Paths are printed relative to
+# $VAULT so output is stable and shareable.
+HITS_TMP="$(mktemp)"
+trap 'rm -f "$HITS_TMP"' EXIT
+
+# -r recursive, -n line nums, -I skip binary, -E extended regex, -i case-insens,
+# --include to restrict to markdown. Paths are absolute here; rewrite below.
+# When CONTEXT>0, grep emits context lines as `path-lineno-content` and
+# inserts `--` group separators between hit clusters.
+if ! grep -rnIE -i --include='*.md' -C "$CONTEXT" -- "$QUERY" "$NOTES" > "$HITS_TMP"; then
+  # grep exits 1 on no matches — honest miss
+  echo "vault-search: no hits for '$QUERY' in $NOTES" >&2
+  exit 1
+fi
+
+# rewrite absolute vault path to relative form; preserve both the `:`
+# (hit) and `-` (context) separators grep uses, and pass through `--`
+# group separators untouched.
+python3 -c '
+import sys, os, re
+vault = os.path.realpath(sys.argv[1])
+path = sys.argv[2]
+# split on the first occurrence of either : or - that follows the path.
+# grep format: "<abspath><sep><lineno><sep><content>" where sep is ":" for
+# hit lines and "-" for context lines. Vault paths dont contain ":" so
+# splitting on the first separator that precedes a numeric lineno is safe.
+pat = re.compile(r"^(?P<path>.+?)(?P<sep>[:-])(?P<ln>\d+)(?P=sep)(?P<body>.*)$")
+with open(path) as fh:
+    for line in fh:
+        s = line.rstrip("\n")
+        if s == "--":
+            print(s)
+            continue
+        m = pat.match(s)
+        if not m:
+            print(s)
+            continue
+        p = m.group("path")
+        sep = m.group("sep")
+        ln = m.group("ln")
+        body = m.group("body")
+        try:
+            rp = os.path.relpath(os.path.realpath(p), vault)
+        except ValueError:
+            rp = p
+        print(f"{rp}{sep}{ln}{sep}{body}")
+' "$VAULT" "$HITS_TMP"

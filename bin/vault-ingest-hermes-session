@@ -1,0 +1,327 @@
+#!/usr/bin/env bash
+# bin/vault-ingest-hermes-session [--mode=raw|digest|both] <session-file> <vault-root>
+#
+# Option D / D+: ingest a Hermes session transcript into the vault as one or
+# both of:
+#   - raw transcript    (--mode=raw,    default; F16)
+#   - extractive digest (--mode=digest;  F17)
+#   - both              (--mode=both;    F17)
+#
+# Accepts both:
+#   - JSON sessions  (~/.hermes/sessions/session_*.json with a .messages[] array)
+#   - JSONL sessions (~/.hermes/sessions/*.jsonl, one message object per line)
+#
+# Contract (identical across modes):
+#   - Writes into <vault>/ops/inbox/ only (NOT raw/, NOT notes/, NOT out/).
+#     The drain (bin/vault-inbox-drain) promotes inbox → raw → notes and
+#     owns provenance; this script is a pure shape-converter.
+#   - Raw filename:    session-<stem>-<ext>.md
+#   - Digest filename: session-digest-<stem>-<ext>.md
+#   - Idempotent at the filesystem level: re-running with the same input
+#     writes the same filename; if identical bytes already landed in
+#     ops/raw/, the drain's refile step will sha-idempotent-skip it.
+#   - No wall-clock fields in body — sha-idempotent across reruns.
+#   - Digest is PURELY EXTRACTIVE. No LLM calls. Offline-safe.
+#
+# Exit codes:
+#   0 — inbox drop(s) written
+#   1 — input unreadable / parse failure
+#   2 — misuse
+
+set -euo pipefail
+
+usage() { echo "usage: $0 [--mode=raw|digest|both] <session-file> <vault-root>" >&2; exit 2; }
+
+MODE="raw"
+ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --mode=raw|--mode=digest|--mode=both) MODE="${a#--mode=}" ;;
+    --mode=*) echo "vault-ingest-hermes-session: bad mode: $a" >&2; usage ;;
+    -h|--help) usage ;;
+    *) ARGS+=("$a") ;;
+  esac
+done
+
+[ "${#ARGS[@]}" -eq 2 ] || usage
+SRC="${ARGS[0]}"
+VAULT="${ARGS[1]}"
+
+[ -f "$SRC" ]        || { echo "vault-ingest-hermes-session: no such file: $SRC" >&2; exit 1; }
+[ -d "$VAULT" ]      || { echo "vault-ingest-hermes-session: vault not a directory: $VAULT" >&2; exit 2; }
+
+INBOX="$VAULT/ops/inbox"
+mkdir -p "$INBOX"
+
+SRC_BASE="$(basename "$SRC")"
+SRC_EXT_LC="$(printf '%s' "${SRC_BASE##*.}" | tr '[:upper:]' '[:lower:]')"
+SRC_STEM="${SRC_BASE%.*}"
+
+emit_raw() {
+  local tmp dest
+  tmp="$(mktemp -t hermsess.XXXXXX).md"
+  python3 - "$SRC" > "$tmp" <<'PY'
+import json, sys, pathlib
+
+src = sys.argv[1]
+stem = pathlib.Path(src).stem
+
+MAX_CHARS = 8192  # per-message content cap
+
+def load_messages(path):
+    if path.endswith(".jsonl"):
+        msgs = []
+        meta = {"session_id": stem}
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(obj, dict) and "role" in obj:
+                    msgs.append(obj)
+                elif isinstance(obj, dict) and obj.get("type") in ("session_start","meta"):
+                    for k in ("session_id","model","platform","session_start"):
+                        if k in obj: meta[k] = obj[k]
+        return meta, msgs
+    else:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            data = json.load(fh)
+        meta = {k: data.get(k) for k in ("session_id","model","platform","session_start","last_updated") if k in data}
+        meta.setdefault("session_id", stem)
+        return meta, data.get("messages", [])
+
+def render_content(c):
+    if c is None:
+        return ""
+    if isinstance(c, str):
+        return c
+    if isinstance(c, list):
+        out = []
+        for part in c:
+            if isinstance(part, dict):
+                t = part.get("type") or part.get("role") or ""
+                if "text" in part and isinstance(part["text"], str):
+                    out.append(part["text"])
+                elif "content" in part and isinstance(part["content"], str):
+                    out.append(part["content"])
+                elif t:
+                    out.append(f"[{t}]")
+                else:
+                    out.append(json.dumps(part)[:512])
+            else:
+                out.append(str(part))
+        return "\n\n".join(out)
+    if isinstance(c, dict):
+        return json.dumps(c, indent=2)[:MAX_CHARS]
+    return str(c)
+
+meta, msgs = load_messages(src)
+sess_id = meta.get("session_id") or stem
+model = meta.get("model") or ""
+started = meta.get("session_start") or ""
+
+title = f"Hermes Session — {sess_id}"
+
+lines = []
+lines.append(f"# {title}")
+lines.append("")
+lines.append(f"- session_id: `{sess_id}`")
+if model:   lines.append(f"- model: `{model}`")
+if started: lines.append(f"- session_start: `{started}`")
+lines.append(f"- source_file: `{src}`")
+lines.append(f"- message_count: `{len(msgs)}`")
+lines.append(f"- origin: hermes-session-ingest (Option D raw transcript)")
+lines.append("")
+lines.append("## Transcript")
+lines.append("")
+
+for i, m in enumerate(msgs):
+    role = m.get("role") or "?"
+    content = render_content(m.get("content"))
+    if len(content) > MAX_CHARS:
+        content = content[:MAX_CHARS] + f"\n\n_[truncated at {MAX_CHARS} chars]_"
+    lines.append(f"### {i+1}. {role}")
+    lines.append("")
+    lines.append(content if content.strip() else "_(empty)_")
+    lines.append("")
+
+sys.stdout.write("\n".join(lines) + "\n")
+PY
+  dest="$INBOX/session-${SRC_STEM}-${SRC_EXT_LC}.md"
+  mv -f "$tmp" "$dest"
+  echo "$dest"
+}
+
+emit_digest() {
+  local tmp dest
+  tmp="$(mktemp -t hermdigest.XXXXXX).md"
+  python3 - "$SRC" > "$tmp" <<'PY'
+import json, sys, pathlib
+
+src = sys.argv[1]
+stem = pathlib.Path(src).stem
+
+EXCERPT_CHARS = 500
+
+def load_messages(path):
+    if path.endswith(".jsonl"):
+        msgs = []
+        meta = {"session_id": stem}
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(obj, dict) and "role" in obj:
+                    msgs.append(obj)
+                elif isinstance(obj, dict) and obj.get("type") in ("session_start","meta"):
+                    for k in ("session_id","model","platform","session_start"):
+                        if k in obj: meta[k] = obj[k]
+        return meta, msgs
+    else:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            data = json.load(fh)
+        meta = {k: data.get(k) for k in ("session_id","model","platform","session_start","last_updated") if k in data}
+        meta.setdefault("session_id", stem)
+        return meta, data.get("messages", [])
+
+def render_content(c):
+    if c is None:
+        return ""
+    if isinstance(c, str):
+        return c
+    if isinstance(c, list):
+        out = []
+        for part in c:
+            if isinstance(part, dict):
+                if "text" in part and isinstance(part["text"], str):
+                    out.append(part["text"])
+                elif "content" in part and isinstance(part["content"], str):
+                    out.append(part["content"])
+            else:
+                out.append(str(part))
+        return "\n\n".join(out)
+    if isinstance(c, dict):
+        return json.dumps(c)
+    return str(c)
+
+def collect_tools(msgs):
+    seen = []
+    seen_set = set()
+    def add(name):
+        if name and name not in seen_set:
+            seen_set.add(name); seen.append(name)
+    for m in msgs:
+        # role=tool messages may carry a "name" field
+        if m.get("role") == "tool":
+            add(m.get("name") or m.get("tool_name"))
+        # assistant tool_calls array (OpenAI-ish schema)
+        tc = m.get("tool_calls")
+        if isinstance(tc, list):
+            for call in tc:
+                if isinstance(call, dict):
+                    fn = call.get("function") or {}
+                    if isinstance(fn, dict):
+                        add(fn.get("name"))
+                    add(call.get("name"))
+        # content list entries with type=tool_use / tool_call
+        c = m.get("content")
+        if isinstance(c, list):
+            for part in c:
+                if isinstance(part, dict):
+                    t = part.get("type") or ""
+                    if t in ("tool_use", "tool_call"):
+                        add(part.get("name"))
+    return seen
+
+meta, msgs = load_messages(src)
+sess_id = meta.get("session_id") or stem
+model = meta.get("model") or ""
+started = meta.get("session_start") or ""
+
+role_counts = {}
+total_chars = 0
+first_user = None
+last_assistant = None
+for m in msgs:
+    role = m.get("role") or "?"
+    role_counts[role] = role_counts.get(role, 0) + 1
+    text = render_content(m.get("content"))
+    total_chars += len(text)
+    if role == "user" and first_user is None and text.strip():
+        first_user = text
+    if role == "assistant" and text.strip():
+        last_assistant = text
+
+tools = collect_tools(msgs)
+
+def excerpt(s):
+    if not s: return ""
+    s = s.strip()
+    if len(s) > EXCERPT_CHARS:
+        return s[:EXCERPT_CHARS] + " …[truncated]"
+    return s
+
+title = f"Hermes Session Digest — {sess_id}"
+
+lines = []
+lines.append(f"# {title}")
+lines.append("")
+lines.append(f"- session_id: `{sess_id}`")
+if model:   lines.append(f"- model: `{model}`")
+if started: lines.append(f"- session_start: `{started}`")
+lines.append(f"- source_file: `{src}`")
+lines.append(f"- message_count: `{len(msgs)}`")
+lines.append(f"- approx_char_count: `{total_chars}`")
+lines.append(f"- origin: hermes-session-ingest (Option D+ extractive digest)")
+lines.append("")
+# role_counts, stable ordering
+lines.append("## role_counts")
+lines.append("")
+for r in sorted(role_counts.keys()):
+    lines.append(f"- {r}: `{role_counts[r]}`")
+lines.append("")
+lines.append("## tools_used")
+lines.append("")
+if tools:
+    for t in tools:
+        lines.append(f"- `{t}`")
+else:
+    lines.append("_(none extracted)_")
+lines.append("")
+lines.append("## first_user_message")
+lines.append("")
+lines.append(excerpt(first_user) if first_user else "_(none)_")
+lines.append("")
+lines.append("## final_assistant_message")
+lines.append("")
+lines.append(excerpt(last_assistant) if last_assistant else "_(none)_")
+lines.append("")
+lines.append("## topics")
+lines.append("")
+lines.append("_(unfilled — reserved for deterministic compile step; do not fabricate)_")
+lines.append("")
+
+sys.stdout.write("\n".join(lines) + "\n")
+PY
+  dest="$INBOX/session-digest-${SRC_STEM}-${SRC_EXT_LC}.md"
+  mv -f "$tmp" "$dest"
+  echo "$dest"
+}
+
+case "$MODE" in
+  raw)    emit_raw ;;
+  digest) emit_digest ;;
+  both)   emit_raw; emit_digest ;;
+  *) usage ;;
+esac
+
+exit 0

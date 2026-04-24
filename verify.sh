@@ -236,7 +236,172 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON + FAIL_COPILOT_EXT))
+FAIL_COMPILE_SLICE=0
+section "7. Compile slice runtime witness (North Star: raw -> compiled wiki)"
+if [ -x tests/test_compile_slice.sh ]; then
+  if ./tests/test_compile_slice.sh >/dev/null 2>&1; then
+    ok "tests/test_compile_slice.sh green"
+  else
+    bad "tests/test_compile_slice.sh failed"
+    ./tests/test_compile_slice.sh 2>&1 | sed 's/^/    /'
+    FAIL_COMPILE_SLICE=1
+  fi
+else
+  warn "tests/test_compile_slice.sh not present — compile slice not wired"
+fi
+
+# ---------------------------------------------------------------------------
+FAIL_SEARCH_SLICE=0
+section "8. Search slice runtime witness (North Star: queried)"
+if [ -x tests/test_search_slice.sh ]; then
+  if ./tests/test_search_slice.sh >/dev/null 2>&1; then
+    ok "tests/test_search_slice.sh green"
+  else
+    bad "tests/test_search_slice.sh failed"
+    ./tests/test_search_slice.sh 2>&1 | sed 's/^/    /'
+    FAIL_SEARCH_SLICE=1
+  fi
+else
+  warn "tests/test_search_slice.sh not present — search slice not wired"
+fi
+
+# ---------------------------------------------------------------------------
+FAIL_RENDER_SLICE=0
+section "9. Render slice runtime witness (North Star: rendered)"
+if [ -x tests/test_render_slice.sh ]; then
+  if ./tests/test_render_slice.sh >/dev/null 2>&1; then
+    ok "tests/test_render_slice.sh green"
+  else
+    bad "tests/test_render_slice.sh failed"
+    ./tests/test_render_slice.sh 2>&1 | sed 's/^/    /'
+    FAIL_RENDER_SLICE=1
+  fi
+else
+  warn "tests/test_render_slice.sh not present — render slice not wired"
+fi
+
+# ---------------------------------------------------------------------------
+FAIL_REFILE_SLICE=0
+section "10. Refile slice runtime witness (North Star: refiled)"
+if [ -x tests/test_refile_slice.sh ]; then
+  if ./tests/test_refile_slice.sh >/dev/null 2>&1; then
+    ok "tests/test_refile_slice.sh green"
+  else
+    bad "tests/test_refile_slice.sh failed"
+    ./tests/test_refile_slice.sh 2>&1 | sed 's/^/    /'
+    FAIL_REFILE_SLICE=1
+  fi
+else
+  warn "tests/test_refile_slice.sh not present — refile slice not wired"
+fi
+
+# ---------------------------------------------------------------------------
+FAIL_PROV_PROP=0
+section "11. Provenance propagation witness (refile → compile lineage)"
+if [ -x tests/test_provenance_propagation.sh ]; then
+  if ./tests/test_provenance_propagation.sh >/dev/null 2>&1; then
+    ok "tests/test_provenance_propagation.sh green"
+  else
+    bad "tests/test_provenance_propagation.sh failed"
+    ./tests/test_provenance_propagation.sh 2>&1 | sed 's/^/    /'
+    FAIL_PROV_PROP=1
+  fi
+else
+  warn "tests/test_provenance_propagation.sh not present — provenance propagation not wired"
+fi
+
+# ---------------------------------------------------------------------------
+FAIL_PDF_INGEST=0
+section "12. PDF ingest witness (markitdown → ops/raw/)"
+if [ -x tests/test_pdf_ingest_slice.sh ]; then
+  if ./tests/test_pdf_ingest_slice.sh >/dev/null 2>&1; then
+    ok "tests/test_pdf_ingest_slice.sh green"
+  else
+    bad "tests/test_pdf_ingest_slice.sh failed"
+    ./tests/test_pdf_ingest_slice.sh 2>&1 | sed 's/^/    /'
+    FAIL_PDF_INGEST=1
+  fi
+else
+  warn "tests/test_pdf_ingest_slice.sh not present — pdf ingest not wired"
+fi
+
+# ---------------------------------------------------------------------------
+FAIL_E2E_LOOP=0
+section "13. End-to-end loop-closure witness (refile → compile → search → render)"
+if [ -x tests/test_e2e_loop.sh ]; then
+  if ./tests/test_e2e_loop.sh >/dev/null 2>&1; then
+    ok "tests/test_e2e_loop.sh green"
+  else
+    bad "tests/test_e2e_loop.sh failed"
+    ./tests/test_e2e_loop.sh 2>&1 | sed 's/^/    /'
+    FAIL_E2E_LOOP=1
+  fi
+else
+  warn "tests/test_e2e_loop.sh not present — e2e loop-closure not wired"
+fi
+
+# ---------------------------------------------------------------------------
+FAIL_VAULT_DETECT=0
+section "14. Vault detection witness (CLAUDE.md or AGENTS.md marker)"
+if [ -x tests/test_vault_detection.sh ]; then
+  if ./tests/test_vault_detection.sh >/dev/null 2>&1; then
+    ok "tests/test_vault_detection.sh green"
+  else
+    bad "tests/test_vault_detection.sh failed"
+    ./tests/test_vault_detection.sh 2>&1 | sed 's/^/    /'
+    FAIL_VAULT_DETECT=1
+  fi
+else
+  warn "tests/test_vault_detection.sh not present — vault detection not wired"
+fi
+
+# ---------------------------------------------------------------------------
+FAIL_INBOX_DRAIN=0
+section "15. Inbox drain witness (Option B: ops/inbox/ → ops/raw/)"
+if [ -x tests/test_inbox_drain.sh ]; then
+  if ./tests/test_inbox_drain.sh >/dev/null 2>&1; then
+    ok "tests/test_inbox_drain.sh green"
+  else
+    bad "tests/test_inbox_drain.sh failed"
+    ./tests/test_inbox_drain.sh 2>&1 | sed 's/^/    /'
+    FAIL_INBOX_DRAIN=1
+  fi
+else
+  warn "tests/test_inbox_drain.sh not present — inbox drain not wired"
+fi
+
+# ---------------------------------------------------------------------------
+FAIL_HERMES_SESSION=0
+section "16. Hermes session ingest witness (Option D: .json/.jsonl → inbox)"
+if [ -x tests/test_hermes_session_ingest.sh ]; then
+  if ./tests/test_hermes_session_ingest.sh >/dev/null 2>&1; then
+    ok "tests/test_hermes_session_ingest.sh green"
+  else
+    bad "tests/test_hermes_session_ingest.sh failed"
+    ./tests/test_hermes_session_ingest.sh 2>&1 | sed 's/^/    /'
+    FAIL_HERMES_SESSION=1
+  fi
+else
+  warn "tests/test_hermes_session_ingest.sh not present — hermes session ingest not wired"
+fi
+
+# ---------------------------------------------------------------------------
+FAIL_HERMES_DIGEST=0
+section "17. Hermes session digest witness (Option D+: extractive summary)"
+if [ -x tests/test_hermes_session_digest.sh ]; then
+  if ./tests/test_hermes_session_digest.sh >/dev/null 2>&1; then
+    ok "tests/test_hermes_session_digest.sh green"
+  else
+    bad "tests/test_hermes_session_digest.sh failed"
+    ./tests/test_hermes_session_digest.sh 2>&1 | sed 's/^/    /'
+    FAIL_HERMES_DIGEST=1
+  fi
+else
+  warn "tests/test_hermes_session_digest.sh not present — hermes session digest not wired"
+fi
+
+# ---------------------------------------------------------------------------
+TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON + FAIL_COPILOT_EXT + FAIL_COMPILE_SLICE + FAIL_SEARCH_SLICE + FAIL_RENDER_SLICE + FAIL_REFILE_SLICE + FAIL_PROV_PROP + FAIL_PDF_INGEST + FAIL_E2E_LOOP + FAIL_VAULT_DETECT + FAIL_INBOX_DRAIN + FAIL_HERMES_SESSION + FAIL_HERMES_DIGEST))
 
 printf "\n"
 printf "=========================================\n"
@@ -247,11 +412,22 @@ printf "  frontmatter       : %s\n"  "$([ $FAIL_FRONTMATTER = 0 ] && echo PASS |
 printf "  plugin-root refs  : %s\n"  "$([ $FAIL_DANGLING    = 0 ] && echo PASS || echo FAIL)"
 printf "  hooks.json        : %s\n"  "$([ $FAIL_HOOKS_JSON  = 0 ] && echo PASS || echo FAIL)"
 printf "  copilot-extension : %s\n"  "$([ $FAIL_COPILOT_EXT = 0 ] && echo PASS || echo FAIL)"
+printf "  compile slice     : %s\n"  "$([ $FAIL_COMPILE_SLICE = 0 ] && echo PASS || echo FAIL)"
+printf "  search slice      : %s\n"  "$([ $FAIL_SEARCH_SLICE = 0 ] && echo PASS || echo FAIL)"
+printf "  render slice      : %s\n"  "$([ $FAIL_RENDER_SLICE = 0 ] && echo PASS || echo FAIL)"
+printf "  refile slice      : %s\n"  "$([ $FAIL_REFILE_SLICE = 0 ] && echo PASS || echo FAIL)"
+printf "  provenance prop   : %s\n"  "$([ $FAIL_PROV_PROP = 0 ] && echo PASS || echo FAIL)"
+printf "  pdf ingest        : %s\n"  "$([ $FAIL_PDF_INGEST = 0 ] && echo PASS || echo FAIL)"
+printf "  e2e loop closure  : %s\n"  "$([ $FAIL_E2E_LOOP = 0 ] && echo PASS || echo FAIL)"
+printf "  vault detection   : %s\n"  "$([ $FAIL_VAULT_DETECT = 0 ] && echo PASS || echo FAIL)"
+printf "  inbox drain       : %s\n"  "$([ $FAIL_INBOX_DRAIN = 0 ] && echo PASS || echo FAIL)"
+printf "  hermes session    : %s\n"  "$([ $FAIL_HERMES_SESSION = 0 ] && echo PASS || echo FAIL)"
+printf "  hermes digest     : %s\n"  "$([ $FAIL_HERMES_DIGEST = 0 ] && echo PASS || echo FAIL)"
 printf "  wiki-links (info) : %d broken\n" "$WIKI_BROKEN"
 printf "=========================================\n"
 
 if [ "$TOTAL_FAIL" = "0" ]; then
-  printf "${GRN}✅ PASSED${RST} (gating checks: 5/5)\n"
+  printf "${GRN}✅ PASSED${RST} (gating checks: 16/16)\n"
   exit 0
 else
   printf "${RED}❌ FAILED${RST} (%d gating check(s) failed)\n" "$TOTAL_FAIL"

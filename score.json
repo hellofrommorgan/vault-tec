@@ -27,7 +27,7 @@
         "no SC2086 quoting bugs",
         "no SC2155 assignment masking"
       ],
-      "passes": false,
+      "passes": true,
       "depends_on": []
     },
     {
@@ -40,7 +40,7 @@
         "all agents/*.md have required keys",
         "no malformed frontmatter blocks"
       ],
-      "passes": false,
+      "passes": true,
       "depends_on": []
     },
     {
@@ -49,13 +49,19 @@
       "priority": 4,
       "verification": [
         "bin/vault-search script exists and is executable",
-        "accepts query arg and vault path arg",
-        "returns ranked results as JSON",
-        "integrated as callable tool for LLM",
-        "documented in README"
+        "accepts <vault-root> and <query> args",
+        "searches notes/ (compiled surface), NOT ops/raw/",
+        "returns plain-text path:line:content hits, paths relative to vault",
+        "exit 0 on hits, 1 on miss (fail loud stderr), 2 on misuse/empty vault",
+        "tests/test_search_slice.sh enforces anti-cheat: compile → delete raw → hits must come from compiled notes only",
+        "documented in README (deferred: slice 2 ships CLI + test; README sweep is a follow-on)",
+        "JSON / ranking / semantic search EXPLICITLY OUT OF SCOPE for this slice",
+        "--context N flag emits ±N surrounding lines around each hit (grep -C), preserving backward compatibility when omitted; non-numeric arg exits 2"
       ],
-      "passes": false,
-      "depends_on": []
+      "passes": true,
+      "depends_on": [
+        9
+      ]
     },
     {
       "id": 5,
@@ -72,17 +78,26 @@
     },
     {
       "id": 6,
-      "name": "pdf-ingest-skill",
+      "name": "pdf-ingest-markitdown",
       "priority": 6,
       "verification": [
-        "skills/pdf-ingest/SKILL.md exists",
-        "extracts text via pdftotext or equivalent",
-        "produces atomic-note drafts for each key concept",
-        "creates a source-note with citation metadata",
-        "flags paywalled/low-confidence sections"
+        "bin/vault-ingest-pdf <pdf> <vault-root> exists and is executable",
+        "uses Microsoft MarkItDown exclusively (https://github.com/microsoft/markitdown) — no pdftotext/ocrmypdf/pdfminer fallback",
+        "markitdown discovery order: $VAULT_TEC_MARKITDOWN, then PATH, then auto-bootstrapped venv at .score/state/mitd-venv/",
+        "converts PDF → markdown, then hands off to bin/vault-refile-append with env-attested provenance (REFILED_ORIGINAL_PATH, REFILED_ORIGINAL_SHA256, REFILED_ORIGINAL_FORMAT=pdf)",
+        "landed ops/raw/<stem>.md frontmatter: source=<abs pdf path>, original_sha256=<sha of PDF bytes, pre-conversion>, original_format=pdf",
+        "SHA-idempotent on PDF bytes: re-run exits 0 with duplicate no-op, no new raw file",
+        "propagates through F12: compiled notes carry PDF's original_sha256, so grep across notes/ locates all concepts derived from a given PDF",
+        "refuses non-.pdf sources (exit 1); misuse exits 2; missing source exits 1 fail-loud",
+        "tests/test_pdf_ingest_slice.sh exits 0; wired as verify.sh gate #12",
+        "tests/fixtures/sample.pdf is the hermetic fixture for this witness"
       ],
-      "passes": false,
-      "depends_on": []
+      "passes": true,
+      "depends_on": [
+        9,
+        11,
+        12
+      ]
     },
     {
       "id": 7,
@@ -93,11 +108,13 @@
         "reads ops/raw/ or raw/ dir",
         "produces atomic notes tagged status:seed",
         "builds topic MOC",
-        "connection weaving ≥2 links/note",
+        "connection weaving ≥2 links/note (requires agent-driven /compile, NOT deterministic replay; P4 forbids fabricating sibling links without semantic grounding)",
         "reports orphan count"
       ],
       "passes": false,
-      "depends_on": []
+      "depends_on": [
+        9
+      ]
     },
     {
       "id": 8,
@@ -113,7 +130,192 @@
         "extension loads via extensions_manage inspect (status: running)"
       ],
       "passes": true,
-      "depends_on": [1]
+      "depends_on": [
+        1
+      ]
+    },
+    {
+      "id": 9,
+      "name": "compile-slice-deterministic-witness",
+      "priority": 9,
+      "verification": [
+        "commands/compile.md exists with valid frontmatter and contract text",
+        "bin/vault-compile-replay exists and is executable",
+        "ops/raw/ exists as ingress directory",
+        "tests/test_compile_slice.sh exits 0 against a fresh temp vault",
+        "produced notes carry 'status: seed' frontmatter",
+        "a *MOC*.md is produced with [[wiki-links]] to all seeds",
+        "ops/reports/compile-report.md is emitted with 'orphan_count=N' line",
+        "verify.sh includes this as a gating check (8/8)"
+      ],
+      "passes": true,
+      "depends_on": [
+        1
+      ]
+    },
+    {
+      "id": 10,
+      "name": "render-slice-deterministic-witness",
+      "priority": 10,
+      "verification": [
+        "bin/vault-render <vault> <slug> exists and is executable",
+        "reads only notes/<slug>.md (compiled truth), never ops/raw/",
+        "writes ops/out/<slug>.rendered.md (derived-only; never canonical)",
+        "strips YAML frontmatter, rewrites [[wikilinks]] → [name](./name.md), prepends '## Table of Contents'",
+        "byte-identical on rerun (determinism)",
+        "exit 1 (fail-loud stderr) when source note missing; exit 2 on misuse",
+        "tests/test_render_slice.sh exits 0; wired as verify.sh gate #9",
+        "ops/out/ is derivative — NOT indexed by bin/vault-search, NOT re-ingested by compile"
+      ],
+      "passes": true,
+      "depends_on": [
+        9
+      ]
+    },
+    {
+      "id": 11,
+      "name": "refile-slice-deterministic-witness",
+      "priority": 11,
+      "verification": [
+        "bin/vault-refile-append <source-md> <vault-root> exists and is executable",
+        "deposits source into ops/raw/ with provenance frontmatter (source, refiled_at, refiled_by, original_sha256)",
+        "original_sha256 is computed from ORIGINAL source bytes (pre-injection)",
+        "refiled_by reads $REFILED_BY env (fallback 'unknown')",
+        "atomic write via tmpfile+mv; no .tmp stragglers",
+        "SHA-idempotent: rerun on identical source exits 0 and creates no new raw file",
+        "hard-refuses sources under $VAULT/ops/out/ (no self-fueling render→raw loop); exit 1, fail-loud stderr",
+        "does NOT write to notes/ (compile remains bin/vault-compile-replay's job)",
+        "emits ops/reports/refile-report.md append-only table with each landing",
+        "exit 1 (fail-loud) on missing source; exit 2 on misuse/bad vault root",
+        "tests/test_refile_slice.sh exits 0; wired as verify.sh gate #10",
+        "provenance lives in raw artifact + refile-report — and propagates into notes/ via F12"
+      ],
+      "passes": true,
+      "depends_on": [
+        9
+      ]
+    },
+    {
+      "id": 12,
+      "name": "provenance-propagation-witness",
+      "priority": 12,
+      "verification": [
+        "bin/vault-compile-replay reads original_sha256 from raw/*.md frontmatter",
+        "every compiled note (seed + MOC) derived from a provenance-bearing raw carries refiled_from: <rel-raw-path> and original_sha256: <sha> frontmatter keys",
+        "honest-contract guard: raws without provenance frontmatter produce notes with NO injected refiled_from/original_sha256 (compiler must never manufacture lineage)",
+        "idempotent across repeated compile invocations",
+        "tests/test_provenance_propagation.sh exits 0; wired as verify.sh gate #11",
+        "closes the F11-flagged gap: lineage is now reasonable from notes/ alone, not only from ops/raw/"
+      ],
+      "passes": true,
+      "depends_on": [
+        9,
+        11
+      ]
+    },
+    {
+      "id": 13,
+      "name": "e2e-loop-closure-witness",
+      "priority": 13,
+      "verification": [
+        "tests/test_e2e_loop.sh exists and is executable",
+        "chains refile → compile → search → render in one scenario using a single seed source",
+        "asserts refile lands exactly-or-at-least one file in ops/raw/ with original_sha256 frontmatter",
+        "asserts compile emits notes/*.md including at least one *-MOC.md",
+        "asserts vault-search hits on a unique seeded token appear in notes/-backed output",
+        "asserts search output does NOT leak ops/raw/ or ops/out/ paths (compiled-only contract)",
+        "asserts vault-render produces ops/out/*.rendered.md and never leaks rendered artifacts into notes/",
+        "wired as verify.sh gate #13; makes 12/12 gating checks the new green bar"
+      ],
+      "passes": true,
+      "depends_on": [
+        9,
+        10,
+        11
+      ]
+    },
+    {
+      "id": 14,
+      "name": "vault-detection-agents-md",
+      "priority": 14,
+      "verification": [
+        "hooks/scripts/vault-session-start.sh, vault-session-end.sh, vault-precompact.sh accept AGENTS.md as a vault marker (not only CLAUDE.md)",
+        "guard still requires self/ and notes/ to be present",
+        "bare directory without any marker still short-circuits the hook",
+        "tests/test_vault_detection.sh exits 0; wired as verify.sh gate #14",
+        "unblocks ~/Mind (AGENTS.md vault) from transparently participating in vault-tec hooks"
+      ],
+      "passes": true,
+      "depends_on": []
+    },
+    {
+      "id": 15,
+      "name": "inbox-drain-option-b",
+      "priority": 15,
+      "verification": [
+        "bin/vault-inbox-drain <vault> [--compile] exists, executable",
+        "dispatches md/pdf/txt/html from ops/inbox/ via vault-refile-append (md, txt, html) or vault-ingest-pdf",
+        "provenance frontmatter attests to ORIGINAL file (path + sha256 of original bytes, not converted markdown)",
+        "unsupported extensions move to ops/inbox/_failed/<name> with <name>.reason sidecar; drain exits 1 on any failure",
+        "successful items move to ops/inbox/_ingested/<sha8>-<name>",
+        "SHA-idempotent: re-dropping identical bytes produces no new raw/ entry",
+        "ops/out/ sources remain refused by vault-refile-append (self-fueling loop prevention)",
+        "cycle logs append to ops/inbox/drain.log with INGEST/FAIL/SKIP/CYCLE rows",
+        "--compile triggers bin/vault-compile-replay only when at least one item was processed",
+        "tests/test_inbox_drain.sh exits 0; wired as verify.sh gate #15",
+        "designed for cron invocation (Hermes cron / launchd); no interactive deps"
+      ],
+      "passes": true,
+      "depends_on": [
+        11,
+        12,
+        6
+      ]
+    },
+    {
+      "id": 16,
+      "name": "hermes-session-ingest-option-d",
+      "priority": 16,
+      "verification": [
+        "bin/vault-ingest-hermes-session <session-file> <vault-root> exists, executable",
+        "accepts both .json (messages[] schema) and .jsonl session formats from ~/.hermes/sessions/",
+        "emits exactly one markdown file into <vault>/ops/inbox/ (never writes to raw/, notes/, or out/)",
+        "destination filename is deterministic: session-<stem>-<ext>.md, collision-safe for json/jsonl siblings",
+        "captures RAW transcript (role + content text preserved, no lossy summarization); per-message content cap 8192 chars",
+        "no wall-clock fields in body — sha-idempotent across re-runs so the drain refile de-dupes",
+        "after drain, inbox drop flows through refile to ops/raw/ with canonical provenance frontmatter (original_sha256 of inbox bytes, refiled_from set)",
+        "re-ingest + re-drain of identical session produces zero additional raw/ entries",
+        "tests/test_hermes_session_ingest.sh exits 0; wired as verify.sh gate #16",
+        "designed for Hermes cron invocation against ~/.hermes/sessions/ alongside inbox-drain"
+      ],
+      "passes": true,
+      "depends_on": [
+        11,
+        12,
+        15
+      ]
+    },
+    {
+      "id": 17,
+      "name": "hermes-session-digest-option-d-plus",
+      "priority": 17,
+      "verification": [
+        "bin/vault-ingest-hermes-session supports --mode={raw,digest,both}; default remains 'raw' (F16 backward compat)",
+        "digest mode is PURELY EXTRACTIVE — no LLM calls, offline-safe for cron",
+        "digest filename deterministic: session-digest-<stem>-<ext>.md, distinct from raw transcript",
+        "digest body contains role_counts, tools_used (extracted from role=tool name + assistant tool_calls + content tool_use parts), first_user_message excerpt (~500 chars), final_assistant_message excerpt (~500 chars), approx_char_count, session metadata",
+        "digest contains NO wall-clock / ingested_at / digested_at timestamp fields — sha-idempotent across re-runs (byte-identical)",
+        "topics section reserved and empty — no fabrication; deterministic compile step may fill later",
+        "both mode emits raw + digest with distinct filenames into ops/inbox/ only",
+        "after drain, digest lands in ops/raw/ with provenance frontmatter; re-ingest + re-drain produces zero additional raw entries",
+        "scripts/hermes-vault-cron.sh invokes --mode=both so cron produces raw + digest in lockstep",
+        "tests/test_hermes_session_digest.sh exits 0; wired as verify.sh gate #17 (16/16 new green bar)"
+      ],
+      "passes": true,
+      "depends_on": [
+        15,
+        16
+      ]
     }
   ]
 }

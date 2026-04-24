@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+# bin/vault-inbox-drain <vault-root> [--compile]
+#
+# Drain <vault>/ops/inbox/ into <vault>/ops/raw/ using canonical vault-tec
+# ingress primitives. Designed to be invoked by cron (Hermes or launchd).
+#
+# Dispatch by extension:
+#   *.md   → bin/vault-refile-append
+#   *.pdf  → bin/vault-ingest-pdf
+#   *.txt  → wrap with minimal markdown heading, then vault-refile-append
+#   *.html → best-effort: strip tags via python html.parser, refile
+# Anything else → move to ops/inbox/_failed/ with reason; never touch raw/.
+#
+# Success → move original to ops/inbox/_ingested/<sha8>-<basename>
+# Failure → move original to ops/inbox/_failed/<basename> + .reason
+# Both destinations carry an index line in ops/inbox/drain.log.
+#
+# Contracts (same as vault-refile-append):
+#   - ops/out/ is refused as a source (no self-fueling loop)
+#   - SHA-idempotent: already-ingested identical bytes are skipped (archived
+#     with .skipped suffix rather than re-refiled)
+#   - provenance frontmatter carries:
+#       REFILED_ORIGINAL_PATH = original absolute path
+#       REFILED_ORIGINAL_SHA256 = sha of original bytes (not converted md)
+#       REFILED_ORIGINAL_FORMAT = md | pdf | txt | html
+#       REFILED_BY = hermes-cron-inbox-drain
+#
+# --compile  after successful drains, invoke bin/vault-compile-replay.
+#
+# Exit codes:
+#   0 — drain cycle ran (even with zero inbox items)
+#   2 — misuse / bad vault root
+#   1 — at least one dispatched item failed (hard error); inspect drain.log
+
+set -euo pipefail
+
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+REFILE="$SELF_DIR/vault-refile-append"
+INGEST_PDF="$SELF_DIR/vault-ingest-pdf"
+
+usage() {
+  echo "usage: $0 <vault-root> [--compile]" >&2
+  exit 2
+}
+
+[ $# -lt 1 ] && usage
+VAULT="$1"; shift || true
+DO_COMPILE=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --compile) DO_COMPILE=1 ;;
+    *) echo "vault-inbox-drain: unknown flag $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+[ -d "$VAULT" ]              || { echo "vault-inbox-drain: not a dir: $VAULT" >&2; exit 2; }
+[ -d "$VAULT/ops" ]          || { echo "vault-inbox-drain: missing ops/ in $VAULT" >&2; exit 2; }
+[ -x "$REFILE" ]             || { echo "vault-inbox-drain: missing $REFILE" >&2; exit 2; }
+
+INBOX="$VAULT/ops/inbox"
+INGESTED="$INBOX/_ingested"
+FAILED="$INBOX/_failed"
+LOG="$INBOX/drain.log"
+mkdir -p "$INBOX" "$INGESTED" "$FAILED" "$VAULT/ops/raw" "$VAULT/ops/reports"
+
+log() {
+  # ts\tlevel\tfile\tmsg
+  printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" >> "$LOG"
+}
+
+fail_count=0
+processed=0
+
+shopt -s nullglob
+for src in "$INBOX"/*; do
+  # only process regular files at top level; skip our own archive dirs + log
+  [ -f "$src" ] || continue
+  base="$(basename "$src")"
+  case "$base" in
+    drain.log|.DS_Store) continue ;;
+  esac
+
+  ext="${base##*.}"
+  ext_lc="$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')"
+  sha="$(shasum -a 256 -- "$src" | awk '{print $1}')"
+  sha8="${sha:0:8}"
+
+  # canonical provenance env for the refile primitive
+  export REFILED_BY="${REFILED_BY:-hermes-cron-inbox-drain}"
+  export REFILED_ORIGINAL_PATH="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$src")"
+  export REFILED_ORIGINAL_SHA256="$sha"
+  export REFILED_ORIGINAL_FORMAT="$ext_lc"
+
+  rc=0
+  case "$ext_lc" in
+    md)
+      "$REFILE" "$src" "$VAULT" >/dev/null 2>&1 || rc=$?
+      ;;
+    pdf)
+      if [ -x "$INGEST_PDF" ]; then
+        "$INGEST_PDF" "$src" "$VAULT" >/dev/null 2>&1 || rc=$?
+      else
+        rc=90
+      fi
+      ;;
+    txt)
+      tmp="$(mktemp -t vtdrain.XXXXXX).md"
+      title="$(printf '%s' "$base" | sed 's/\.[^.]*$//')"
+      {
+        printf '# %s\n\n' "$title"
+        cat -- "$src"
+      } > "$tmp"
+      "$REFILE" "$tmp" "$VAULT" >/dev/null 2>&1 || rc=$?
+      rm -f -- "$tmp"
+      ;;
+    html|htm)
+      tmp="$(mktemp -t vtdrain.XXXXXX).md"
+      title="$(printf '%s' "$base" | sed 's/\.[^.]*$//')"
+      python3 - "$src" "$title" > "$tmp" 2>/dev/null <<'PY' || rc=91
+import sys, html, re
+from html.parser import HTMLParser
+class T(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.buf=[]; self.skip=0; self.title=None; self.in_title=False
+    def handle_starttag(self,tag,attrs):
+        if tag in ('script','style','noscript'): self.skip+=1
+        if tag=='title': self.in_title=True
+        if tag in ('p','br','div','li','tr','h1','h2','h3','h4','h5','h6'):
+            self.buf.append('\n')
+    def handle_endtag(self,tag):
+        if tag in ('script','style','noscript') and self.skip>0: self.skip-=1
+        if tag=='title': self.in_title=False
+        if tag in ('p','div','li','tr','h1','h2','h3','h4','h5','h6'):
+            self.buf.append('\n')
+    def handle_data(self,data):
+        if self.skip: return
+        if self.in_title and self.title is None:
+            self.title=data.strip(); return
+        self.buf.append(data)
+src, title = sys.argv[1], sys.argv[2]
+with open(src, 'r', encoding='utf-8', errors='replace') as fh:
+    data = fh.read()
+p=T(); p.feed(data)
+text = ''.join(p.buf)
+text = re.sub(r'\n{3,}','\n\n', text).strip()
+print(f"# {p.title or title}\n")
+print(text or "_no extractable text_")
+PY
+      if [ "$rc" = 0 ]; then
+        "$REFILE" "$tmp" "$VAULT" >/dev/null 2>&1 || rc=$?
+      fi
+      rm -f -- "$tmp"
+      ;;
+    *)
+      rc=92
+      ;;
+  esac
+
+  case "$rc" in
+    0)
+      # success (or sha-idempotent skip — refile exits 0 on duplicate)
+      dest="$INGESTED/${sha8}-${base}"
+      mv -f -- "$src" "$dest"
+      log INGEST "$base" "sha=$sha format=$ext_lc"
+      processed=$((processed + 1))
+      ;;
+    90)
+      dest="$FAILED/$base"
+      mv -f -- "$src" "$dest"
+      echo "bin/vault-ingest-pdf missing or not executable" > "$dest.reason"
+      log FAIL   "$base" "no pdf ingest binary"
+      fail_count=$((fail_count + 1))
+      ;;
+    91)
+      dest="$FAILED/$base"
+      mv -f -- "$src" "$dest"
+      echo "html extraction failed" > "$dest.reason"
+      log FAIL   "$base" "html extraction failed"
+      fail_count=$((fail_count + 1))
+      ;;
+    92)
+      dest="$FAILED/$base"
+      mv -f -- "$src" "$dest"
+      echo "unsupported extension: $ext_lc" > "$dest.reason"
+      log SKIP   "$base" "unsupported ext=$ext_lc"
+      fail_count=$((fail_count + 1))
+      ;;
+    *)
+      dest="$FAILED/$base"
+      mv -f -- "$src" "$dest"
+      echo "refile rc=$rc" > "$dest.reason"
+      log FAIL   "$base" "refile rc=$rc format=$ext_lc"
+      fail_count=$((fail_count + 1))
+      ;;
+  esac
+done
+shopt -u nullglob
+
+if [ "$DO_COMPILE" = 1 ] && [ "$processed" -gt 0 ]; then
+  COMPILE="$SELF_DIR/vault-compile-replay"
+  if [ -x "$COMPILE" ]; then
+    "$COMPILE" "$VAULT" >/dev/null 2>&1 || log WARN compile "compile-replay rc=$?"
+  fi
+fi
+
+log CYCLE end "processed=$processed failed=$fail_count compile=$DO_COMPILE"
+
+if [ "$fail_count" -gt 0 ]; then
+  exit 1
+fi
+exit 0

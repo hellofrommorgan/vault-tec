@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+# bin/vault-compile-replay <vault-root>
+#
+# Deterministic, rule-based replay of the /compile command surface.
+# This is NOT the agent-driven compile — it is a fresh-clone-safe witness
+# that proves the vault SHAPE and write contract without requiring an LLM
+# at runtime. The agent invocation of /compile may produce richer output;
+# both must satisfy commands/compile.md's contract.
+#
+# Exits non-zero on any contract violation (P10: fail loud, not silent).
+#
+# Usage: bin/vault-compile-replay /path/to/vault
+#   Expects <vault>/ops/raw/*.md to exist.
+#   Writes <vault>/notes/*.md and <vault>/ops/reports/compile-report.md.
+#
+# Implementation note (perf): the per-raw-file python subprocess fan-out
+# (slugify, titleify, provenance, section-split) used to fork python3
+# dozens of times per file. On macOS each cold start ~60-100ms, which
+# made a 1400-note compile take ~2m13s. The work is now consolidated
+# into a single python3 invocation for the whole compile run.
+
+set -euo pipefail
+
+if [ $# -ne 1 ]; then
+  echo "usage: $0 <vault-root>" >&2
+  exit 2
+fi
+
+VAULT="$1"
+RAW="$VAULT/ops/raw"
+NOTES="$VAULT/notes"
+REPORTS="$VAULT/ops/reports"
+
+if [ ! -d "$RAW" ]; then
+  echo "vault-compile-replay: missing $RAW (P10: fail loud)" >&2
+  exit 1
+fi
+
+mkdir -p "$NOTES" "$REPORTS"
+
+NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+exec python3 - "$VAULT" "$RAW" "$NOTES" "$REPORTS" "$NOW" <<'PY'
+import os, re, sys, pathlib
+
+VAULT, RAW, NOTES, REPORTS, NOW = sys.argv[1:6]
+raw_dir = pathlib.Path(RAW)
+notes_dir = pathlib.Path(NOTES)
+reports_dir = pathlib.Path(REPORTS)
+
+def slugify(t):
+    t = re.sub(r"[^A-Za-z0-9\s-]", "", t)
+    t = re.sub(r"\s+", "-", t).strip("-")
+    return t
+
+def titleify(t):
+    t = re.sub(r"\s+", " ", t).strip()
+    t = t.strip(" .:;!?")
+    w = t.split()
+    if len(w) < 2:
+        t = t + " (concept)"
+    elif len(w) > 10:
+        t = " ".join(w[:10])
+    return t
+
+def derive_topic(basename):
+    s = basename.replace("_", " ").replace("-", " ").strip()
+    return " ".join(w.capitalize() for w in s.split())
+
+def extract_prov_sha(text):
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return ""
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        m = re.match(r"^original_sha256:\s*(\S+)\s*$", line)
+        if m:
+            return m.group(1)
+    return ""
+
+def split_sections(text):
+    # split on lines starting with 1-6 # followed by space. Keep heading.
+    parts = re.split(r'(?m)^(#{1,6}\s+.+)$', text)
+    sections = []
+    i = 1
+    while i < len(parts):
+        heading = parts[i].strip()
+        body = parts[i+1].strip() if (i + 1) < len(parts) else ""
+        heading_text = re.sub(r'^#{1,6}\s+', '', heading).strip()
+        if heading_text:
+            sections.append((heading_text, body))
+        i += 2
+    return sections
+
+notes_created = 0
+notes_updated = 0
+raw_processed = 0
+skipped = 0
+
+# outbound/inbound edges for orphan calc
+# wiki[]: list of (src_slug, dst_slug)
+wiki = []
+
+# iterate raw files. bash `$RAW/*.md` glob is sorted; replicate.
+raw_files = sorted(p for p in raw_dir.glob("*.md") if p.is_file())
+
+for raw in raw_files:
+    raw_processed += 1
+    base = raw.stem
+    topic = derive_topic(base)
+    topic_slug = slugify(topic)
+    moc_file = notes_dir / f"{topic_slug}-MOC.md"
+    rel_raw = f"ops/raw/{raw.name}"
+
+    text = raw.read_text(encoding="utf-8")
+    prov_sha = extract_prov_sha(text)
+    sections = split_sections(text)
+
+    if not sections:
+        skipped += 1
+        continue
+
+    seed_titles = []
+
+    for heading_text, body in sections:
+        title = titleify(heading_text)
+        slug = slugify(title)
+        note_file = notes_dir / f"{slug}.md"
+
+        if note_file.exists():
+            notes_updated += 1
+        else:
+            notes_created += 1
+
+        buf = []
+        buf.append("---\n")
+        buf.append(f"title: {title}\n")
+        buf.append("status: seed\n")
+        buf.append(f"source: {rel_raw}\n")
+        buf.append(f"topics: [{topic}]\n")
+        buf.append(f"compiled_at: {NOW}\n")
+        if prov_sha:
+            buf.append(f"refiled_from: {rel_raw}\n")
+            buf.append(f"original_sha256: {prov_sha}\n")
+        buf.append("---\n\n")
+        buf.append(f"# {title}\n\n")
+        buf.append(f"{body}\n\n")
+        buf.append("---\n")
+        buf.append(f"_Compiled from [[{topic_slug}-MOC]]._\n")
+        note_file.write_text("".join(buf), encoding="utf-8")
+
+        wiki.append((slug, f"{topic_slug}-MOC"))
+        seed_titles.append(title)
+
+    # write/refresh topic MOC
+    buf = []
+    buf.append("---\n")
+    buf.append(f"title: {topic} MOC\n")
+    buf.append("status: moc\n")
+    buf.append(f"source: {rel_raw}\n")
+    buf.append(f"topics: [{topic}]\n")
+    buf.append(f"compiled_at: {NOW}\n")
+    if prov_sha:
+        buf.append(f"refiled_from: {rel_raw}\n")
+        buf.append(f"original_sha256: {prov_sha}\n")
+    buf.append("---\n\n")
+    buf.append(f"# {topic} MOC\n\n")
+    buf.append(f"Map of content for topic **{topic}**, compiled from `{rel_raw}`.\n\n")
+    buf.append("## Seeds\n\n")
+    for t in seed_titles:
+        if not t:
+            continue
+        buf.append(f"- [[{t}]]\n")
+        tslug = slugify(t)
+        wiki.append((f"{topic_slug}-MOC", tslug))
+    moc_file.write_text("".join(buf), encoding="utf-8")
+
+# orphan count: non-MOC notes with zero inbound links
+inbound = set(dst for _, dst in wiki)
+orphan_count = 0
+for note in sorted(notes_dir.glob("*.md")):
+    b = note.stem
+    if b.endswith("-MOC") or b.endswith("MOC"):
+        continue
+    if b not in inbound:
+        orphan_count += 1
+
+report = reports_dir / "compile-report.md"
+buf = []
+buf.append("---\n")
+buf.append("title: Compile Report\n")
+buf.append("status: report\n")
+buf.append(f"compiled_at: {NOW}\n")
+buf.append("---\n\n")
+buf.append("# Compile Report\n\n")
+buf.append(f"orphan_count={orphan_count}\n")
+buf.append(f"compiled_at={NOW}\n")
+buf.append(f"notes_created={notes_created}\n")
+buf.append(f"notes_updated={notes_updated}\n")
+buf.append(f"raw_files_processed={raw_processed}\n")
+buf.append(f"skipped={skipped}\n")
+buf.append("\n")
+buf.append("Replayer: deterministic heading-split. Not an LLM compile.\n")
+buf.append("Witness target: tests/test_compile_slice.sh\n")
+report.write_text("".join(buf), encoding="utf-8")
+
+print(f"vault-compile-replay: {notes_created} created, {notes_updated} updated, {orphan_count} orphans")
+PY
