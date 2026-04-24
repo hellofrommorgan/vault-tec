@@ -23,8 +23,26 @@
 
 set -euo pipefail
 
+# optional --context N (emit ±N surrounding lines around each hit).
+# Default 0 = current line-oriented behaviour (backward compatible).
+CONTEXT=0
+if [ $# -gt 0 ] && [ "$1" = "--context" ]; then
+  if [ $# -lt 2 ]; then
+    echo "usage: $0 [--context N] <vault-root> <query>" >&2
+    exit 2
+  fi
+  case "$2" in
+    ''|*[!0-9]*)
+      echo "vault-search: --context expects a non-negative integer, got '$2'" >&2
+      exit 2
+      ;;
+  esac
+  CONTEXT="$2"
+  shift 2
+fi
+
 if [ $# -ne 2 ]; then
-  echo "usage: $0 <vault-root> <query>" >&2
+  echo "usage: $0 [--context N] <vault-root> <query>" >&2
   exit 2
 fi
 
@@ -56,28 +74,43 @@ trap 'rm -f "$HITS_TMP"' EXIT
 
 # -r recursive, -n line nums, -I skip binary, -E extended regex, -i case-insens,
 # --include to restrict to markdown. Paths are absolute here; rewrite below.
-if ! grep -rnIE -i --include='*.md' -- "$QUERY" "$NOTES" > "$HITS_TMP"; then
+# When CONTEXT>0, grep emits context lines as `path-lineno-content` and
+# inserts `--` group separators between hit clusters.
+if ! grep -rnIE -i --include='*.md' -C "$CONTEXT" -- "$QUERY" "$NOTES" > "$HITS_TMP"; then
   # grep exits 1 on no matches — honest miss
   echo "vault-search: no hits for '$QUERY' in $NOTES" >&2
   exit 1
 fi
 
-# rewrite absolute vault path to relative form
-# rewrite absolute vault path to relative form
+# rewrite absolute vault path to relative form; preserve both the `:`
+# (hit) and `-` (context) separators grep uses, and pass through `--`
+# group separators untouched.
 python3 -c '
-import sys, os
+import sys, os, re
 vault = os.path.realpath(sys.argv[1])
 path = sys.argv[2]
+# split on the first occurrence of either : or - that follows the path.
+# grep format: "<abspath><sep><lineno><sep><content>" where sep is ":" for
+# hit lines and "-" for context lines. Vault paths dont contain ":" so
+# splitting on the first separator that precedes a numeric lineno is safe.
+pat = re.compile(r"^(?P<path>.+?)(?P<sep>[:-])(?P<ln>\d+)(?P=sep)(?P<body>.*)$")
 with open(path) as fh:
     for line in fh:
-        parts = line.rstrip("\n").split(":", 2)
-        if len(parts) < 3:
-            print(line, end="")
+        s = line.rstrip("\n")
+        if s == "--":
+            print(s)
             continue
-        p, ln, content = parts
+        m = pat.match(s)
+        if not m:
+            print(s)
+            continue
+        p = m.group("path")
+        sep = m.group("sep")
+        ln = m.group("ln")
+        body = m.group("body")
         try:
             rp = os.path.relpath(os.path.realpath(p), vault)
         except ValueError:
             rp = p
-        print(f"{rp}:{ln}:{content}")
+        print(f"{rp}{sep}{ln}{sep}{body}")
 ' "$VAULT" "$HITS_TMP"

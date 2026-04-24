@@ -68,6 +68,44 @@ if printf '%s' "$HIT_OUT" | grep -q "ops/raw/"; then
   exit 1
 fi
 
+# --- --context N: snippet mode (before/after lines around each hit) ---
+#
+# contract:
+#   bin/vault-search --context 2 <vault> <query>
+#     emits ±2 lines of context around each match, with a separator
+#     between hit groups so the block structure is machine-parseable.
+CTX_OUT="$(bin/vault-search --context 2 "$TMP" "$RARE" 2>&1)" || {
+  echo "FAIL: vault-search --context returned non-zero on real hit"
+  echo "$CTX_OUT" | sed 's/^/    /'
+  exit 1
+}
+
+# the hit line itself must still appear (contract stays a superset)
+if ! printf '%s' "$CTX_OUT" | grep -q "$RARE"; then
+  echo "FAIL: --context output missing the matching line"
+  printf '%s\n' "$CTX_OUT" | sed 's/^/    /'
+  exit 1
+fi
+
+# ≥1 line before the hit line should be present — the fixture's rare token
+# lives on a body line, preceded by the "## Cognitive Load" heading a few
+# lines up. With --context 2 we should see a line from that window that is
+# NOT the hit line itself.
+CTX_HITS="$(printf '%s\n' "$CTX_OUT" | grep -v "$RARE" | grep -vE '^--$' | grep -c . || true)"
+if [ "${CTX_HITS:-0}" -lt 1 ]; then
+  echo "FAIL: --context 2 did not emit any surrounding-context lines"
+  printf '%s\n' "$CTX_OUT" | sed 's/^/    /'
+  exit 1
+fi
+
+# misuse: --context requires a numeric arg ≥0
+CTX_MISUSE_RC=0
+bin/vault-search --context notanumber "$TMP" "$RARE" >/dev/null 2>&1 || CTX_MISUSE_RC=$?
+if [ "$CTX_MISUSE_RC" != "2" ]; then
+  echo "FAIL: --context with non-numeric arg must exit 2 (misuse), got $CTX_MISUSE_RC"
+  exit 1
+fi
+
 # --- miss case: non-zero exit, fail loud on stderr ---
 MISS_ERR="$(bin/vault-search "$TMP" "no-such-token-xyz" 2>&1 1>/dev/null || true)"
 MISS_RC=0

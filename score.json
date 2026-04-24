@@ -55,7 +55,8 @@
         "exit 0 on hits, 1 on miss (fail loud stderr), 2 on misuse/empty vault",
         "tests/test_search_slice.sh enforces anti-cheat: compile → delete raw → hits must come from compiled notes only",
         "documented in README (deferred: slice 2 ships CLI + test; README sweep is a follow-on)",
-        "JSON / ranking / semantic search EXPLICITLY OUT OF SCOPE for this slice"
+        "JSON / ranking / semantic search EXPLICITLY OUT OF SCOPE for this slice",
+        "--context N flag emits ±N surrounding lines around each hit (grep -C), preserving backward compatibility when omitted; non-numeric arg exits 2"
       ],
       "passes": true,
       "depends_on": [
