@@ -79,6 +79,31 @@ def extract_prov_sha(text):
             return m.group(1)
     return ""
 
+def extract_compile_mode(text):
+    """Read 'compile:' from raw file frontmatter. Returns one of
+    'whole','sections','skip'. Default missing => 'sections' (legacy)."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return "sections"
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        m = re.match(r"^compile:\s*(\S+)\s*$", line)
+        if m:
+            v = m.group(1).strip()
+            if v in ("whole", "sections", "skip"):
+                return v
+            # invalid: fail loud
+            raise SystemExit(f"vault-compile-replay: invalid compile mode '{v}' (expected whole|sections|skip)")
+    return "sections"
+
+def strip_frontmatter(text):
+    """Return body with leading YAML frontmatter removed."""
+    m = re.match(r"^---\s*\n.*?\n---\s*\n", text, re.DOTALL)
+    if m:
+        return text[m.end():]
+    return text
+
 def split_sections(text):
     # split on lines starting with 1-6 # followed by space. Keep heading.
     parts = re.split(r'(?m)^(#{1,6}\s+.+)$', text)
@@ -97,6 +122,7 @@ notes_created = 0
 notes_updated = 0
 raw_processed = 0
 skipped = 0
+whole_emitted = 0
 
 # outbound/inbound edges for orphan calc
 # wiki[]: list of (src_slug, dst_slug)
@@ -115,6 +141,47 @@ for raw in raw_files:
 
     text = raw.read_text(encoding="utf-8")
     prov_sha = extract_prov_sha(text)
+    mode = extract_compile_mode(text)
+
+    if mode == "skip":
+        skipped += 1
+        continue
+
+    if mode == "whole":
+        # Emit exactly one note per raw file, named from raw stem to avoid
+        # title-drift collisions. No section split. No MOC.
+        body = strip_frontmatter(text).strip()
+        title = topic  # readable, derived from filename
+        slug = base    # deterministic, collision-free
+        note_file = notes_dir / f"{slug}.md"
+
+        if note_file.exists():
+            notes_updated += 1
+        else:
+            notes_created += 1
+
+        buf = []
+        buf.append("---\n")
+        buf.append(f"title: {title}\n")
+        buf.append("status: whole\n")
+        buf.append(f"source: {rel_raw}\n")
+        buf.append(f"topics: [{topic}]\n")
+        buf.append(f"compiled_at: {NOW}\n")
+        buf.append("compile_mode: whole\n")
+        if prov_sha:
+            buf.append(f"refiled_from: {rel_raw}\n")
+            buf.append(f"original_sha256: {prov_sha}\n")
+        buf.append("---\n\n")
+        buf.append(f"# {title}\n\n")
+        buf.append(body)
+        if not body.endswith("\n"):
+            buf.append("\n")
+        note_file.write_text("".join(buf), encoding="utf-8")
+        whole_emitted += 1
+        # No wiki edges, no MOC; whole notes are durable but unfanned.
+        continue
+
+    # mode == "sections" (default / legacy)
     sections = split_sections(text)
 
     if not sections:
@@ -200,6 +267,7 @@ buf.append(f"notes_created={notes_created}\n")
 buf.append(f"notes_updated={notes_updated}\n")
 buf.append(f"raw_files_processed={raw_processed}\n")
 buf.append(f"skipped={skipped}\n")
+buf.append(f"whole_emitted={whole_emitted}\n")
 buf.append("\n")
 buf.append("Replayer: deterministic heading-split. Not an LLM compile.\n")
 buf.append("Witness target: tests/test_compile_slice.sh\n")

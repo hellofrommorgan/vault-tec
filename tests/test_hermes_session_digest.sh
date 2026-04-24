@@ -113,6 +113,7 @@ VAULT_TEC_MARKITDOWN="${VAULT_TEC_MARKITDOWN:-}" \
 RAW_DIG=$(grep -rl "Hermes Session Digest" "$TMP/ops/raw" 2>/dev/null | head -1 || true)
 [ -n "$RAW_DIG" ] || { echo "FAIL: digest did not land in ops/raw/ after drain"; exit 1; }
 grep -q "original_sha256:" "$RAW_DIG" || { echo "FAIL: digest raw drop missing provenance"; exit 1; }
+grep -q "^compile: sections$" "$RAW_DIG" || { echo "FAIL: digest raw drop missing 'compile: sections' frontmatter"; exit 1; }
 
 BEFORE=$(find "$TMP/ops/raw" -name '*.md' | wc -l | tr -d ' ')
 bin/vault-ingest-hermes-session --mode=both "$TMP/session_dig.json" "$TMP" >/dev/null

@@ -127,6 +127,14 @@ started = meta.get("session_start") or ""
 title = f"Hermes Session — {sess_id}"
 
 lines = []
+# Producer-declared compile contract: raw transcripts are NOT structured
+# knowledge chunks; compile must emit them as one whole note (not split on
+# per-message ### headings). See vault-compile-replay frontmatter contract.
+lines.append("---")
+lines.append(f"title: {title}")
+lines.append("compile: whole")
+lines.append("---")
+lines.append("")
 lines.append(f"# {title}")
 lines.append("")
 lines.append(f"- session_id: `{sess_id}`")
@@ -273,6 +281,13 @@ def excerpt(s):
 title = f"Hermes Session Digest — {sess_id}"
 
 lines = []
+# Producer-declared compile contract: digests ARE structured knowledge —
+# split into section notes per heading and emit MOC.
+lines.append("---")
+lines.append(f"title: {title}")
+lines.append("compile: sections")
+lines.append("---")
+lines.append("")
 lines.append(f"# {title}")
 lines.append("")
 lines.append(f"- session_id: `{sess_id}`")

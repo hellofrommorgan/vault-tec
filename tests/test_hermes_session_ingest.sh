@@ -95,6 +95,21 @@ RAW_JSONL=$(grep -rl "$RARE_TOK_B" "$TMP/ops/raw" 2>/dev/null | head -1 || true)
 grep -q "original_sha256:" "$RAW_JSON"  || { echo "FAIL: raw drop missing provenance frontmatter (json)"; exit 1; }
 grep -q "original_sha256:" "$RAW_JSONL" || { echo "FAIL: raw drop missing provenance frontmatter (jsonl)"; exit 1; }
 
+# F18 contract: raw transcripts MUST carry compile: whole so compile-replay
+# does not section-split per-message ### headings into noise notes.
+grep -q "^compile: whole$" "$RAW_JSON"  || { echo "FAIL: raw json drop missing 'compile: whole' frontmatter"; exit 1; }
+grep -q "^compile: whole$" "$RAW_JSONL" || { echo "FAIL: raw jsonl drop missing 'compile: whole' frontmatter"; exit 1; }
+
+# After --compile drained above, notes/ must have exactly one whole note per
+# raw stem and ZERO numbered fragment notes.
+if ls "$TMP/notes" 2>/dev/null | grep -E '^[0-9]+-(user|assistant|tool|system)\.md$' >/dev/null; then
+  echo "FAIL: compile produced numbered transcript fragment notes from raw transcripts"
+  ls "$TMP/notes"; exit 1
+fi
+for stem in $(ls "$TMP/ops/raw" | sed 's/\.md$//'); do
+  [ -f "$TMP/notes/${stem}.md" ] || { echo "FAIL: missing whole note for raw stem $stem"; ls "$TMP/notes"; exit 1; }
+done
+
 # sha-idempotence: re-running ingest + drain should not create a second raw entry
 BEFORE=$(find "$TMP/ops/raw" -name '*.md' | wc -l | tr -d ' ')
 bin/vault-ingest-hermes-session "$TMP/session_fake.json" "$TMP" >/dev/null

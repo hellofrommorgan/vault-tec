@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+"""bin/vault-repair-session-fragments <vault-root> [--apply]
+
+One-shot, provable repair for legacy session-fragment damage created before
+the F18 compile contract (compile: whole|sections|skip) was introduced.
+
+It deletes notes ONLY when ALL conditions hold (council guidance):
+
+For fragment notes (filename like '258-assistant.md'):
+  1. filename matches ^[0-9]+-(user|assistant|tool|system)\\.md$
+  2. frontmatter has `status: seed`
+  3. body is empty / `_(empty)_` / very short single message
+  4. there exists a raw source under ops/raw/session-*.md whose old transcript
+     shape contains headings matching ^### N. (user|assistant|tool|system)
+  5. replaying the OLD section split on that raw would produce that exact
+     slug (proof of provenance, not just naming pattern)
+
+For session pseudo-MOCs (Session-Session-*-MOC.md):
+  1. filename matches ^Session-Session-.*-MOC\\.md$
+  2. corresponds to a provable session transcript raw
+  3. all of its [[seed]] targets are deletion candidates or already absent
+
+Also retroactively backfills 'compile: whole' into legacy session raws and
+'compile: sections' into legacy session-digest raws that lack the key, so
+future replays don't regenerate the noise.
+
+Default: DRY-RUN. Prints actions to stdout, writes a report to
+ops/reports/session-fragment-repair.md. Use --apply to actually mutate.
+"""
+import os, re, sys, pathlib, datetime
+
+def slugify(t):
+    t = re.sub(r"[^A-Za-z0-9\s-]", "", t)
+    t = re.sub(r"\s+", "-", t).strip("-")
+    return t
+
+def titleify(t):
+    t = re.sub(r"\s+", " ", t).strip().strip(" .:;!?")
+    w = t.split()
+    if len(w) < 2:
+        t = t + " (concept)"
+    elif len(w) > 10:
+        t = " ".join(w[:10])
+    return t
+
+FRAG_RE = re.compile(r"^[0-9]+-(user|assistant|tool|system)\.md$")
+SESS_MOC_RE = re.compile(r"^Session-Session-.*-MOC\.md$")
+ROLE_HEAD_RE = re.compile(r"^###\s+\d+\.\s+(user|assistant|tool|system)\b", re.M)
+
+def has_frontmatter_key(text, key):
+    m = re.match(r"^---\s*\n(.*?\n)---\s*\n", text, re.DOTALL)
+    if not m:
+        return False
+    for line in m.group(1).splitlines():
+        if re.match(rf"^{re.escape(key)}\s*:", line):
+            return True
+    return False
+
+def fm_value(text, key):
+    m = re.match(r"^---\s*\n(.*?\n)---\s*\n", text, re.DOTALL)
+    if not m:
+        return None
+    for line in m.group(1).splitlines():
+        mm = re.match(rf"^{re.escape(key)}\s*:\s*(.*)$", line)
+        if mm:
+            return mm.group(1).strip()
+    return None
+
+def body_after_fm(text):
+    m = re.match(r"^---\s*\n.*?\n---\s*\n", text, re.DOTALL)
+    return text[m.end():] if m else text
+
+def looks_empty_or_short(body):
+    b = body.strip()
+    # strip leading "# title\n\n"
+    b = re.sub(r"^#\s+.*?\n+", "", b, count=1)
+    # strip trailing "_Compiled from..._" footer block
+    b = re.sub(r"\n+---\n_Compiled from.*$", "", b, flags=re.S)
+    b = b.strip()
+    return ("_(empty)_" in b) or (len(b) <= 200)
+
+def replay_old_section_slugs(raw_text):
+    """Mirror old vault-compile-replay split logic to derive the slugs that
+    would have been emitted from this raw file."""
+    parts = re.split(r'(?m)^(#{1,6}\s+.+)$', raw_text)
+    slugs = []
+    i = 1
+    while i < len(parts):
+        heading = parts[i].strip()
+        ht = re.sub(r'^#{1,6}\s+', '', heading).strip()
+        if ht:
+            slugs.append(slugify(titleify(ht)))
+        i += 2
+    return set(slugs)
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__); sys.exit(2)
+    vault = pathlib.Path(sys.argv[1]).resolve()
+    apply = "--apply" in sys.argv[2:]
+    notes = vault / "notes"
+    raws = vault / "ops" / "raw"
+    reports = vault / "ops" / "reports"
+    if not notes.is_dir() or not raws.is_dir():
+        print(f"ERR: vault missing notes/ or ops/raw/: {vault}", file=sys.stderr)
+        sys.exit(2)
+    reports.mkdir(parents=True, exist_ok=True)
+
+    # 1. Build provable-slug index from old session transcript raws.
+    session_raws = sorted(raws.glob("session-session_*.md"))
+    digest_raws = sorted(raws.glob("session-digest-*.md"))
+
+    provable = {}  # slug -> raw path
+    legacy_session_raws = []
+    for r in session_raws:
+        text = r.read_text(encoding="utf-8", errors="replace")
+        # only consider ones that exhibit OLD transcript shape
+        if not ROLE_HEAD_RE.search(text):
+            continue
+        legacy_session_raws.append(r)
+        for s in replay_old_section_slugs(text):
+            provable.setdefault(s, []).append(r)
+
+    # 2. Scan candidate fragment notes
+    frag_delete = []
+    for n in sorted(notes.glob("*.md")):
+        if not FRAG_RE.match(n.name):
+            continue
+        text = n.read_text(encoding="utf-8", errors="replace")
+        if fm_value(text, "status") != "seed":
+            continue
+        if not looks_empty_or_short(body_after_fm(text)):
+            continue
+        slug = n.stem  # already slugified
+        if slug not in provable:
+            continue
+        frag_delete.append(n)
+
+    # 3. Session pseudo-MOC pass
+    delete_set = {p.name for p in frag_delete}
+    moc_delete = []
+    for m in sorted(notes.glob("Session-Session-*-MOC.md")):
+        text = m.read_text(encoding="utf-8", errors="replace")
+        # all wiki targets must be deletion candidates or already-absent
+        targets = re.findall(r"\[\[([^\]]+)\]\]", text)
+        if not targets:
+            continue
+        ok = True
+        for t in targets:
+            t_path = notes / f"{t}.md"
+            if t_path.exists() and t_path.name not in delete_set:
+                ok = False
+                break
+        if ok:
+            moc_delete.append(m)
+
+    # 4. Backfill compile contract on legacy raws
+    backfill_session_whole = []
+    for r in legacy_session_raws:
+        text = r.read_text(encoding="utf-8", errors="replace")
+        if not has_frontmatter_key(text, "compile"):
+            backfill_session_whole.append(r)
+    backfill_digest_sections = []
+    for r in digest_raws:
+        text = r.read_text(encoding="utf-8", errors="replace")
+        if not has_frontmatter_key(text, "compile"):
+            backfill_digest_sections.append(r)
+
+    # 5. Report
+    now = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    rep = reports / "session-fragment-repair.md"
+    lines = [
+        f"# session-fragment-repair", "",
+        f"- ran_at: `{now}`",
+        f"- mode: `{'APPLY' if apply else 'DRY-RUN'}`",
+        f"- legacy_session_raws_scanned: {len(legacy_session_raws)}",
+        f"- fragment_notes_to_delete: {len(frag_delete)}",
+        f"- session_mocs_to_delete: {len(moc_delete)}",
+        f"- raws_to_backfill_compile_whole: {len(backfill_session_whole)}",
+        f"- raws_to_backfill_compile_sections: {len(backfill_digest_sections)}",
+        "",
+        "## sample fragment deletions (first 20)", "",
+    ]
+    for p in frag_delete[:20]:
+        lines.append(f"- `{p.relative_to(vault)}`")
+    lines += ["", "## sample MOC deletions (first 20)", ""]
+    for p in moc_delete[:20]:
+        lines.append(f"- `{p.relative_to(vault)}`")
+    rep.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    print(f"DRY-RUN: would delete {len(frag_delete)} fragment notes, {len(moc_delete)} session MOCs")
+    print(f"DRY-RUN: would backfill compile:whole into {len(backfill_session_whole)} session raws, compile:sections into {len(backfill_digest_sections)} digest raws")
+    print(f"report: {rep}")
+
+    if not apply:
+        return
+
+    # APPLY
+    deleted = 0
+    for p in frag_delete:
+        p.unlink()
+        deleted += 1
+    for p in moc_delete:
+        p.unlink()
+        deleted += 1
+
+    def inject_compile(path, mode):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        m = re.match(r"^---\s*\n(.*?\n)---\s*\n", text, re.DOTALL)
+        if m:
+            new_fm = m.group(1).rstrip() + f"\ncompile: {mode}\n"
+            path.write_text(f"---\n{new_fm}---\n" + text[m.end():], encoding="utf-8")
+        else:
+            path.write_text(f"---\ncompile: {mode}\n---\n\n" + text, encoding="utf-8")
+
+    for r in backfill_session_whole:
+        inject_compile(r, "whole")
+    for r in backfill_digest_sections:
+        inject_compile(r, "sections")
+
+    print(f"APPLIED: deleted={deleted}, backfilled session raws={len(backfill_session_whole)}, backfilled digest raws={len(backfill_digest_sections)}")
+
+if __name__ == "__main__":
+    main()
