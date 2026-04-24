@@ -316,6 +316,29 @@
         15,
         16
       ]
+    },
+    {
+      "id": 18,
+      "name": "compile-frontmatter-contract",
+      "priority": 18,
+      "verification": [
+        "bin/vault-compile-replay reads `compile:` key from raw frontmatter and dispatches whole|sections|skip; default missing => sections (legacy compat)",
+        "invalid `compile:` value fails loud (non-zero rc) — no silent default",
+        "`whole` emits exactly one note per raw file, named from raw stem (collision-free), preserves transcript headings verbatim, no fragment notes, no MOC; status: whole, compile_mode: whole frontmatter",
+        "`sections` preserves prior behavior: per-heading section notes + topic MOC",
+        "`skip` emits no notes from that raw — archival ingress only",
+        "bin/vault-refile-append merges allowlisted producer frontmatter (compile, title, topic) into landed raw; provenance keys (source/refiled_*/original_*) always win",
+        "bin/vault-ingest-hermes-session emits `compile: whole` for raw transcripts and `compile: sections` for digests",
+        "bin/vault-repair-session-fragments provides one-shot dry-run+apply repair: deletes only PROVABLE legacy session fragment notes (filename pattern + status:seed + empty/short body + slug derivable from old split logic against an existing session raw); deletes pseudo-MOCs only when all targets are deletion candidates or already absent; backfills compile contract on legacy raws",
+        "tests/test_compile_contract.sh exits 0; wired as verify.sh gate #18",
+        "tests/test_hermes_session_ingest.sh asserts `compile: whole` on raw drop and zero numbered fragment notes after end-to-end compile",
+        "tests/test_hermes_session_digest.sh asserts `compile: sections` on digest drop"
+      ],
+      "passes": true,
+      "depends_on": [
+        16,
+        17
+      ]
     }
   ]
 }

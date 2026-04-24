@@ -401,7 +401,22 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON + FAIL_COPILOT_EXT + FAIL_COMPILE_SLICE + FAIL_SEARCH_SLICE + FAIL_RENDER_SLICE + FAIL_REFILE_SLICE + FAIL_PROV_PROP + FAIL_PDF_INGEST + FAIL_E2E_LOOP + FAIL_VAULT_DETECT + FAIL_INBOX_DRAIN + FAIL_HERMES_SESSION + FAIL_HERMES_DIGEST))
+FAIL_COMPILE_CONTRACT=0
+section "18. Compile frontmatter contract witness (compile: whole|sections|skip)"
+if [ -x tests/test_compile_contract.sh ]; then
+  if ./tests/test_compile_contract.sh >/dev/null 2>&1; then
+    ok "tests/test_compile_contract.sh green"
+  else
+    bad "tests/test_compile_contract.sh failed"
+    ./tests/test_compile_contract.sh 2>&1 | sed 's/^/    /'
+    FAIL_COMPILE_CONTRACT=1
+  fi
+else
+  warn "tests/test_compile_contract.sh not present — compile contract not wired"
+fi
+
+# ---------------------------------------------------------------------------
+TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON + FAIL_COPILOT_EXT + FAIL_COMPILE_SLICE + FAIL_SEARCH_SLICE + FAIL_RENDER_SLICE + FAIL_REFILE_SLICE + FAIL_PROV_PROP + FAIL_PDF_INGEST + FAIL_E2E_LOOP + FAIL_VAULT_DETECT + FAIL_INBOX_DRAIN + FAIL_HERMES_SESSION + FAIL_HERMES_DIGEST + FAIL_COMPILE_CONTRACT))
 
 printf "\n"
 printf "=========================================\n"
@@ -423,11 +438,12 @@ printf "  vault detection   : %s\n"  "$([ $FAIL_VAULT_DETECT = 0 ] && echo PASS 
 printf "  inbox drain       : %s\n"  "$([ $FAIL_INBOX_DRAIN = 0 ] && echo PASS || echo FAIL)"
 printf "  hermes session    : %s\n"  "$([ $FAIL_HERMES_SESSION = 0 ] && echo PASS || echo FAIL)"
 printf "  hermes digest     : %s\n"  "$([ $FAIL_HERMES_DIGEST = 0 ] && echo PASS || echo FAIL)"
+printf "  compile contract  : %s\n"  "$([ $FAIL_COMPILE_CONTRACT = 0 ] && echo PASS || echo FAIL)"
 printf "  wiki-links (info) : %d broken\n" "$WIKI_BROKEN"
 printf "=========================================\n"
 
 if [ "$TOTAL_FAIL" = "0" ]; then
-  printf "${GRN}✅ PASSED${RST} (gating checks: 16/16)\n"
+  printf "${GRN}✅ PASSED${RST} (gating checks: 17/17)\n"
   exit 0
 else
   printf "${RED}❌ FAILED${RST} (%d gating check(s) failed)\n" "$TOTAL_FAIL"
