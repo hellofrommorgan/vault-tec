@@ -311,7 +311,22 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON + FAIL_COPILOT_EXT + FAIL_COMPILE_SLICE + FAIL_SEARCH_SLICE + FAIL_RENDER_SLICE + FAIL_REFILE_SLICE + FAIL_PROV_PROP))
+FAIL_PDF_INGEST=0
+section "12. PDF ingest witness (markitdown → ops/raw/)"
+if [ -x tests/test_pdf_ingest_slice.sh ]; then
+  if ./tests/test_pdf_ingest_slice.sh >/dev/null 2>&1; then
+    ok "tests/test_pdf_ingest_slice.sh green"
+  else
+    bad "tests/test_pdf_ingest_slice.sh failed"
+    ./tests/test_pdf_ingest_slice.sh 2>&1 | sed 's/^/    /'
+    FAIL_PDF_INGEST=1
+  fi
+else
+  warn "tests/test_pdf_ingest_slice.sh not present — pdf ingest not wired"
+fi
+
+# ---------------------------------------------------------------------------
+TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON + FAIL_COPILOT_EXT + FAIL_COMPILE_SLICE + FAIL_SEARCH_SLICE + FAIL_RENDER_SLICE + FAIL_REFILE_SLICE + FAIL_PROV_PROP + FAIL_PDF_INGEST))
 
 printf "\n"
 printf "=========================================\n"
@@ -327,11 +342,12 @@ printf "  search slice      : %s\n"  "$([ $FAIL_SEARCH_SLICE = 0 ] && echo PASS 
 printf "  render slice      : %s\n"  "$([ $FAIL_RENDER_SLICE = 0 ] && echo PASS || echo FAIL)"
 printf "  refile slice      : %s\n"  "$([ $FAIL_REFILE_SLICE = 0 ] && echo PASS || echo FAIL)"
 printf "  provenance prop   : %s\n"  "$([ $FAIL_PROV_PROP = 0 ] && echo PASS || echo FAIL)"
+printf "  pdf ingest        : %s\n"  "$([ $FAIL_PDF_INGEST = 0 ] && echo PASS || echo FAIL)"
 printf "  wiki-links (info) : %d broken\n" "$WIKI_BROKEN"
 printf "=========================================\n"
 
 if [ "$TOTAL_FAIL" = "0" ]; then
-  printf "${GRN}✅ PASSED${RST} (gating checks: 10/10)\n"
+  printf "${GRN}✅ PASSED${RST} (gating checks: 11/11)\n"
   exit 0
 else
   printf "${RED}❌ FAILED${RST} (%d gating check(s) failed)\n" "$TOTAL_FAIL"

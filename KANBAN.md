@@ -138,5 +138,28 @@ Baseline hash (to detect substrate drift): `$(cd ~/Projects/vault-tec && ./verif
 - Halt reason: slice bar met. Further work (F5 /ask-the-wiki, F6 pdf-ingest, or broader frontmatter propagation) is steering-dependent.
 
 
+### slice 6 — PDF ingest via Microsoft MarkItDown (F6, reframed)
+
+- Operator directive: "for PDF ingestion, replace with https://github.com/microsoft/markitdown completely". Previous F6 spec (pdftotext / atomic-note drafter / paywall flag) is superseded — no co-existence, no fallback. Score ledger rewritten to match.
+- SLICE: `bin/vault-ingest-pdf <pdf> <vault-root>` — thin wrapper that:
+    1. resolves a markitdown binary ($VAULT_TEC_MARKITDOWN → PATH → `.score/state/mitd-venv/bin/markitdown`, auto-bootstrapped on first use),
+    2. converts the PDF to markdown on a tmp path,
+    3. hands off to `bin/vault-refile-append` with PDF-aware provenance via env.
+- Refile-append extended with 3 optional env vars (backward compatible; existing tests still green):
+    * `REFILED_ORIGINAL_PATH` — override `source:` frontmatter
+    * `REFILED_ORIGINAL_SHA256` — override idempotence key + fm value; verified against shasum of REFILED_ORIGINAL_PATH (mismatch = fail loud)
+    * `REFILED_ORIGINAL_FORMAT` — emit `original_format:` fm key
+- Canonicality held: ops/raw/ stays markdown-only; PDFs do not land as binaries. Provenance refers to the ORIGINAL PDF, not the transient .md. `.score/state/mitd-venv/` is gitignored (derived, not truth).
+- Honest propagation: F12 already reads `original_sha256`, so the PDF's SHA now threads all the way through compile into `notes/` frontmatter. `grep -l 'original_sha256: <pdf-sha>' notes/` locates every compiled concept derived from a given source PDF.
+- Self-fueling guard extended: ops/out/ is refused as REFILED_ORIGINAL_PATH too (no render → ingest-pdf → refile loop).
+- TDD: `tests/test_pdf_ingest_slice.sh` failed RED correctly ("bin/vault-ingest-pdf missing or not executable"). After impl, one honest correction landed: fixture PDF needed heading structure so the heading-split replayer produces sections. Regenerated via reportlab.
+- Witness asserts: source fm points to original pdf path, original_sha256 = PDF bytes (not markdown), original_format=pdf, body contains converted markdown, SHA-idempotence on re-run (no new file, announced duplicate), no tmp stragglers, non-pdf refusal (exit 1), misuse (exit 2), missing (exit 1), AND propagation through compile into every derived note.
+- Wired as verify.sh gate #12 ("pdf ingest"). Overall: 11/11 gates PASS. Baseline re-seeded.
+- Score: F6 rewritten in place (id preserved, name changed to `pdf-ingest-markitdown`, passes:true, depends_on=[9,11,12]). Audit: 8/8 passed features verified.
+- Hermiticity note: the first `./verify.sh` on a fresh machine will trigger a one-time markitdown venv bootstrap at `.score/state/mitd-venv/` (requires network + python3 >=3.10). Subsequent runs are offline. $VAULT_TEC_MARKITDOWN bypasses bootstrap entirely — used by CI and the operator's /tmp dev venv.
+- Subtraction: no `skills/pdf-ingest/` directory was created. Previous F6 spec mentioned it as a harness requirement; we chose the parsimonious path (one binary, one witness, no skill directory proliferation). If a prompt surface is later wanted, it can be added as commands/ingest-pdf.md without reopening the witness.
+- Halt reason: slice bar met. `raw` edge is now materially wider: any .pdf can round-trip through the full North Star loop with lineage preserved.
+
+
 
 

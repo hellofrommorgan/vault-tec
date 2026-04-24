@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# bin/vault-ingest-pdf <source.pdf> <vault-root>
+#
+# Converts a PDF to markdown using Microsoft MarkItDown and lands the
+# result in $VAULT/ops/raw/ via bin/vault-refile-append, with PDF-aware
+# provenance frontmatter so the F12 propagation carries the PDF's SHA
+# (not the transient .md) into compiled notes/.
+#
+# MarkItDown is the ONLY supported PDF→markdown converter in this repo
+# (replacing any prior pdftotext/ocr paths). See VISION.md North Star:
+# raw must be markdown, so PDFs enter via conversion, not as binaries.
+#
+# Markitdown discovery order:
+#   1. $VAULT_TEC_MARKITDOWN                (explicit override)
+#   2. `markitdown` on $PATH                (system install)
+#   3. .score/state/mitd-venv/bin/markitdown (auto-bootstrapped venv)
+#
+# Exit codes:
+#   0  landed (or duplicate, no-op)
+#   1  source pdf missing / markitdown failure / refile failure
+#   2  misuse (bad argc / bad vault root)
+
+set -euo pipefail
+
+if [ $# -ne 2 ]; then
+  echo "usage: $0 <source.pdf> <vault-root>" >&2
+  exit 2
+fi
+
+SRC="$1"
+VAULT="$2"
+
+if [ ! -d "$VAULT" ]; then
+  echo "vault-ingest-pdf: vault root $VAULT not a directory" >&2
+  exit 2
+fi
+
+if [ ! -f "$SRC" ]; then
+  echo "vault-ingest-pdf: source pdf $SRC not found or not a file" >&2
+  exit 1
+fi
+
+# sniff extension (informational only; markitdown handles many formats but
+# this binary is scoped to pdf to keep the contract narrow)
+case "$SRC" in
+  *.pdf|*.PDF) : ;;
+  *)
+    echo "vault-ingest-pdf: $SRC does not look like a .pdf (refusing; use a format-specific ingester)" >&2
+    exit 1
+    ;;
+esac
+
+# locate this repo root (for the bootstrapped venv path and to call sibling bin/)
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(cd "$BIN_DIR/.." && pwd)"
+
+# ---- markitdown discovery ----
+MITD=""
+if [ -n "${VAULT_TEC_MARKITDOWN:-}" ] && [ -x "$VAULT_TEC_MARKITDOWN" ]; then
+  MITD="$VAULT_TEC_MARKITDOWN"
+elif command -v markitdown >/dev/null 2>&1; then
+  MITD="$(command -v markitdown)"
+elif [ -x "$REPO/.score/state/mitd-venv/bin/markitdown" ]; then
+  MITD="$REPO/.score/state/mitd-venv/bin/markitdown"
+else
+  # bootstrap a local venv — one-time cost, keeps repo self-contained
+  echo "vault-ingest-pdf: bootstrapping local markitdown venv at .score/state/mitd-venv/" >&2
+  PY=""
+  for cand in python3.12 python3.13 python3.11 python3; do
+    if command -v "$cand" >/dev/null 2>&1; then
+      PY="$(command -v "$cand")"
+      # reject stock macOS python3.9 (markitdown needs >=3.10)
+      VER="$("$PY" -c 'import sys; print("%d.%d"%sys.version_info[:2])')"
+      case "$VER" in
+        3.9|3.8|3.7|3.6|2.*) continue ;;
+      esac
+      break
+    fi
+  done
+  if [ -z "$PY" ]; then
+    echo "vault-ingest-pdf: no python3 >=3.10 found. Install one or set VAULT_TEC_MARKITDOWN=/path/to/markitdown" >&2
+    exit 1
+  fi
+  mkdir -p "$REPO/.score/state"
+  "$PY" -m venv "$REPO/.score/state/mitd-venv" >&2
+  "$REPO/.score/state/mitd-venv/bin/pip" install --quiet --upgrade pip >&2 || true
+  "$REPO/.score/state/mitd-venv/bin/pip" install --quiet 'markitdown[pdf]' >&2 \
+    || { echo "vault-ingest-pdf: pip install markitdown failed" >&2; exit 1; }
+  MITD="$REPO/.score/state/mitd-venv/bin/markitdown"
+fi
+
+if [ ! -x "$MITD" ]; then
+  echo "vault-ingest-pdf: markitdown not executable at $MITD" >&2
+  exit 1
+fi
+
+# absolute source path (for provenance source: fm value)
+ABS_SRC="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SRC")"
+PDF_SHA="$(shasum -a 256 "$SRC" | awk '{print $1}')"
+
+# convert to a tmp markdown file
+TMP_MD="$(mktemp -t vault-ingest-pdf.XXXXXX.md)"
+trap '[ -f "$TMP_MD" ] && rm -f "$TMP_MD"' EXIT
+
+if ! "$MITD" "$ABS_SRC" -o "$TMP_MD" >/dev/null 2>&1; then
+  # retry via stdin path as some versions vary
+  if ! "$MITD" "$ABS_SRC" > "$TMP_MD" 2>/dev/null; then
+    echo "vault-ingest-pdf: markitdown conversion failed for $ABS_SRC" >&2
+    exit 1
+  fi
+fi
+
+if [ ! -s "$TMP_MD" ]; then
+  echo "vault-ingest-pdf: markitdown produced empty markdown for $ABS_SRC" >&2
+  exit 1
+fi
+
+# rename tmp so the landed filename carries the pdf stem
+STEM="$(basename "$SRC")"
+STEM="${STEM%.[pP][dD][fF]}"
+STAGED_MD="$(dirname "$TMP_MD")/${STEM}.md"
+mv "$TMP_MD" "$STAGED_MD"
+TMP_MD="$STAGED_MD"
+trap '[ -f "$TMP_MD" ] && rm -f "$TMP_MD"' EXIT
+
+# hand off to refile-append with PDF-aware provenance env
+REFILED_ORIGINAL_PATH="$ABS_SRC" \
+REFILED_ORIGINAL_SHA256="$PDF_SHA" \
+REFILED_ORIGINAL_FORMAT="pdf" \
+REFILED_BY="${REFILED_BY:-unknown}" \
+  "$BIN_DIR/vault-refile-append" "$TMP_MD" "$VAULT"

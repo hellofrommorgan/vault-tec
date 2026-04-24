@@ -4,12 +4,12 @@
 
 See `score.json` for the authoritative feature ledger. At the time of this update:
 
-- F1 verify-sh-green — PASS (gate exists, 10/10 checks green)
+- F1 verify-sh-green — PASS (gate exists, 11/11 checks green)
 - F2 hooks-shellcheck-clean — READY, unverified
 - F3 frontmatter-lint-clean — READY, unverified
 - F4 wiki-search-cli — PASS ← slice 2 (queried step)
 - F5 ask-the-wiki-prototype — READY, unverified
-- F6 pdf-ingest-skill — READY, unverified
+- F6 pdf-ingest-markitdown — PASS ← slice 6 (PDF ingress via Microsoft MarkItDown)
 - F7 raw-compile-command — READY, unverified (depends on F9; requires agent-driven compile, not replay)
 - F8 copilot-cli-parity — PASS
 - F9 compile-slice-deterministic-witness — PASS ← slice 1 (compiled step)

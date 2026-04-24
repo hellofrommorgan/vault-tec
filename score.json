@@ -77,17 +77,26 @@
     },
     {
       "id": 6,
-      "name": "pdf-ingest-skill",
+      "name": "pdf-ingest-markitdown",
       "priority": 6,
       "verification": [
-        "skills/pdf-ingest/SKILL.md exists",
-        "extracts text via pdftotext or equivalent",
-        "produces atomic-note drafts for each key concept",
-        "creates a source-note with citation metadata",
-        "flags paywalled/low-confidence sections"
+        "bin/vault-ingest-pdf <pdf> <vault-root> exists and is executable",
+        "uses Microsoft MarkItDown exclusively (https://github.com/microsoft/markitdown) — no pdftotext/ocrmypdf/pdfminer fallback",
+        "markitdown discovery order: $VAULT_TEC_MARKITDOWN, then PATH, then auto-bootstrapped venv at .score/state/mitd-venv/",
+        "converts PDF → markdown, then hands off to bin/vault-refile-append with env-attested provenance (REFILED_ORIGINAL_PATH, REFILED_ORIGINAL_SHA256, REFILED_ORIGINAL_FORMAT=pdf)",
+        "landed ops/raw/<stem>.md frontmatter: source=<abs pdf path>, original_sha256=<sha of PDF bytes, pre-conversion>, original_format=pdf",
+        "SHA-idempotent on PDF bytes: re-run exits 0 with duplicate no-op, no new raw file",
+        "propagates through F12: compiled notes carry PDF's original_sha256, so grep across notes/ locates all concepts derived from a given PDF",
+        "refuses non-.pdf sources (exit 1); misuse exits 2; missing source exits 1 fail-loud",
+        "tests/test_pdf_ingest_slice.sh exits 0; wired as verify.sh gate #12",
+        "tests/fixtures/sample.pdf is the hermetic fixture for this witness"
       ],
-      "passes": false,
-      "depends_on": []
+      "passes": true,
+      "depends_on": [
+        9,
+        11,
+        12
+      ]
     },
     {
       "id": 7,

@@ -63,8 +63,51 @@ case "$ABS_SRC" in
     ;;
 esac
 
-# compute SHA of ORIGINAL source bytes (never post-injection)
-SHA="$(shasum -a 256 "$SRC" | awk '{print $1}')"
+# compute SHA. By default = SHA of the source file bytes. If a wrapper
+# (e.g. bin/vault-ingest-pdf converting a PDF to markdown on a tmp path)
+# attests to the ORIGINAL non-markdown artifact, it can override via env:
+#
+#   REFILED_ORIGINAL_PATH     — replaces the "source:" fm value (must be
+#                               absolute, must exist, and must NOT live
+#                               under $VAULT/ops/out/)
+#   REFILED_ORIGINAL_SHA256   — replaces the original_sha256 fm value and
+#                               is the idempotence key. Honest contract:
+#                               this MUST match shasum of the file at
+#                               REFILED_ORIGINAL_PATH — we verify.
+#   REFILED_ORIGINAL_FORMAT   — optional free-form tag emitted as
+#                               "original_format:" (e.g. "pdf", "docx").
+#
+# This keeps vault-refile-append as the single landing primitive while
+# letting format-specific ingesters attest to the real external artifact.
+
+if [ -n "${REFILED_ORIGINAL_PATH:-}" ]; then
+  OPATH="$REFILED_ORIGINAL_PATH"
+  if [ ! -f "$OPATH" ]; then
+    echo "vault-refile-append: REFILED_ORIGINAL_PATH $OPATH not found" >&2
+    exit 1
+  fi
+  ABS_OPATH="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$OPATH")"
+  case "$ABS_OPATH" in
+    "$ABS_OUT"/*|"$ABS_OUT")
+      echo "vault-refile-append: refusing ops/out/ original path: $ABS_OPATH" >&2
+      exit 1
+      ;;
+  esac
+  REAL_SHA="$(shasum -a 256 "$OPATH" | awk '{print $1}')"
+  if [ -n "${REFILED_ORIGINAL_SHA256:-}" ]; then
+    if [ "$REFILED_ORIGINAL_SHA256" != "$REAL_SHA" ]; then
+      echo "vault-refile-append: REFILED_ORIGINAL_SHA256 mismatch for $OPATH" >&2
+      echo "  declared: $REFILED_ORIGINAL_SHA256" >&2
+      echo "  actual:   $REAL_SHA" >&2
+      exit 1
+    fi
+  fi
+  SHA="$REAL_SHA"
+  PROV_SOURCE="$OPATH"
+else
+  SHA="$(shasum -a 256 "$SRC" | awk '{print $1}')"
+  PROV_SOURCE="$SRC"
+fi
 
 # idempotence check: scan existing ops/raw/*.md frontmatter for this SHA
 EXISTING=""
@@ -104,10 +147,13 @@ trap '[ -f "$TMP_OUT" ] && rm -f "$TMP_OUT"' EXIT
 
 {
   printf -- '---\n'
-  printf 'source: %s\n'           "$SRC"
+  printf 'source: %s\n'           "$PROV_SOURCE"
   printf 'refiled_at: %s\n'       "$NOW"
   printf 'refiled_by: %s\n'       "$BY"
   printf 'original_sha256: %s\n'  "$SHA"
+  if [ -n "${REFILED_ORIGINAL_FORMAT:-}" ]; then
+    printf 'original_format: %s\n' "$REFILED_ORIGINAL_FORMAT"
+  fi
   printf -- '---\n\n'
   cat "$SRC"
 } > "$TMP_OUT"
@@ -129,6 +175,6 @@ if [ ! -f "$REPORT" ]; then
 fi
 
 REL_LANDED="ops/raw/$(basename "$LANDED")"
-printf '| %s | %s | %s | %s |\n' "$NOW" "$SRC" "$SHA" "$REL_LANDED" >> "$REPORT"
+printf '| %s | %s | %s | %s |\n' "$NOW" "$PROV_SOURCE" "$SHA" "$REL_LANDED" >> "$REPORT"
 
-echo "Refiled $SRC -> $REL_LANDED (sha256=$SHA)"
+echo "Refiled $PROV_SOURCE -> $REL_LANDED (sha256=$SHA)"

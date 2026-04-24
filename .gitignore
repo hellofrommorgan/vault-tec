@@ -3,3 +3,4 @@
 *.swo
 *~
 .mcpb-cache/
+.score/state/mitd-venv/
