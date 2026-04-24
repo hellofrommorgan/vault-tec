@@ -93,5 +93,33 @@ Baseline hash (to detect substrate drift): `$(cd ~/Projects/vault-tec && ./verif
 - Honest partial: single-note only (no batch), markdown-only (no HTML/PDF/Marp), MOC is the exemplar because atomic notes lack H2s, renderer not wired into /compile or an agent-facing /render command yet. All named as follow-ons.
 - Halt reason: bar met for slice 3. North Star: raw ✅ → compiled ✅ → queried ✅ → rendered ✅ → refiled ⬜. Pausing for operator review before slice 4 (refiled).
 
+### slice 4 — refile ingress primitive (F11) — NORTH STAR LOOP CLOSED
+
+- Council: 20260424T144321Z, 9/9 seats. Unanimous convergence on option (b) — NARROW primitive, not an orchestrator.
+- SLICE: bin/vault-refile-append <source-md> <vault-root> deposits ONE external md into ops/raw/ with provenance frontmatter (source, refiled_at, refiled_by, original_sha256). Compile stays bin/vault-compile-replay's job — refusing to bundle compile preserves failure isolation.
+- Canonicality: ops/raw/ is the only ingress truth surface. NO staging dir. NO second truth surface.
+- Provenance honesty: council explicitly rejected claiming provenance survives into notes/. Verified: bin/vault-compile-replay emits a fixed frontmatter schema (title, status, source, topics, compiled_at) and drops unknown raw-frontmatter keys. Therefore the honest contract is: provenance lives in raw artifact + ops/reports/refile-report.md ONLY. Documented in F11 criteria.
+- Dedup: SHA-idempotent on original_sha256 (computed from ORIGINAL source bytes, pre-injection). Rerun on identical source exits 0 + "duplicate: <path>" + no-op. No filename-suffixing — that would manufacture fake novelty.
+- Self-fueling loop guard: hard-refuses sources whose realpath is under $VAULT/ops/out/ (prevents render → refile → compile → render cycles). exit 1 + fail-loud stderr.
+- Atomic write: tmpfile+mv under ops/raw/.refile.XXXXXX. Test asserts no .tmp stragglers.
+- TDD: tests/test_refile_slice.sh failed RED for the right reason. Covers: single-file landing, full frontmatter schema, body preservation, refiled_by env propagation, SHA-from-original-bytes, notes/ untouched, atomic write, idempotence, ops/out/ refusal, refile-report emission, misuse exit 2. Green on first implementation pass.
+- Wired as verify.sh gate #10 (9/9 PASS). Baseline re-seeded.
+- Score: F11 added. passes:true, depends_on=[9]. 6/6 audit PASS (F1, F4, F8, F9, F10, F11).
+- End-to-end runtime witness (all 5 North Star edges exercised in one shell sequence against /tmp/vtec-e2e):
+    REFILED_BY=morgan bin/vault-refile-append /tmp/external.md /tmp/vtec-e2e
+      → Refiled /tmp/external.md -> ops/raw/external.md (sha256=e2363a77...)
+    bin/vault-compile-replay /tmp/vtec-e2e
+      → 3 created, 0 updated, 0 orphans
+    bin/vault-search /tmp/vtec-e2e 'legacy-exporter'
+      → notes/Context-concept.md:11:The team debated sunsetting legacy-exporter.
+    bin/vault-render /tmp/vtec-e2e External-MOC
+      → ops/out/External-MOC.rendered.md (TOC + rewritten links, no frontmatter)
+    ops/reports/refile-report.md has one row.
+- Anti-cheat respected: test prevents cp-into-raw (missing frontmatter), direct notes/ writes (asserts notes_after=0), filename dedup (asserts SHA dedup), post-injection SHA (compares to sha of ORIGINAL source bytes).
+- Karpathy unlock: first honest end-to-end operator path — external insight round-trips INTO the canonical vault + becomes searchable + renderable, all via deterministic bash CLIs with no LLM at test time.
+- Honest partial: refile does NOT auto-compile (by design). Operator runs /compile after batching refiles. Provenance does NOT propagate into compiled notes/ frontmatter (flagged as future work requiring replayer schema extension). ops/raw/ must pre-exist (not auto-created — trips on fresh vaults but this is intentional: bootstrap is a separate concern).
+- Halt reason: NORTH STAR LOOP CLOSED. All 5 edges have concrete CLI witnesses (raw, compiled, queried, rendered, refiled). Pausing for operator steering on next trajectory (F5 /ask-the-wiki is now defensibly next; or F6 pdf-ingest to widen left-side; or replayer schema extension to propagate provenance into notes/).
+
+
 
 

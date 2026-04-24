@@ -161,6 +161,29 @@
       "depends_on": [
         9
       ]
+    },
+    {
+      "id": 11,
+      "name": "refile-slice-deterministic-witness",
+      "priority": 11,
+      "verification": [
+        "bin/vault-refile-append <source-md> <vault-root> exists and is executable",
+        "deposits source into ops/raw/ with provenance frontmatter (source, refiled_at, refiled_by, original_sha256)",
+        "original_sha256 is computed from ORIGINAL source bytes (pre-injection)",
+        "refiled_by reads $REFILED_BY env (fallback 'unknown')",
+        "atomic write via tmpfile+mv; no .tmp stragglers",
+        "SHA-idempotent: rerun on identical source exits 0 and creates no new raw file",
+        "hard-refuses sources under $VAULT/ops/out/ (no self-fueling render→raw loop); exit 1, fail-loud stderr",
+        "does NOT write to notes/ (compile remains bin/vault-compile-replay's job)",
+        "emits ops/reports/refile-report.md append-only table with each landing",
+        "exit 1 (fail-loud) on missing source; exit 2 on misuse/bad vault root",
+        "tests/test_refile_slice.sh exits 0; wired as verify.sh gate #10",
+        "provenance lives in raw artifact + refile-report only — NOT promised to survive into notes/ (replayer emits fixed schema)"
+      ],
+      "passes": true,
+      "depends_on": [
+        9
+      ]
     }
   ]
 }

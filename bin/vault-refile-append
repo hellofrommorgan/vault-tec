@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# bin/vault-refile-append <source-md> <vault-root>
+#
+# Closes the North Star "refiled" edge. Takes an external markdown file
+# produced OUTSIDE the vault (e.g., a meeting note, chat excerpt, copilot
+# insight) and deposits it into $VAULT/ops/raw/ with provenance
+# frontmatter, so the next /compile run ingests it naturally.
+#
+# Contract (see tests/test_refile_slice.sh):
+#   - single source, single landing.
+#   - SHA idempotence: if original_sha256 already present in any
+#     ops/raw/*.md frontmatter, exit 0 and create nothing new.
+#   - hard refuse sources whose realpath is under $VAULT/ops/out/
+#     (prevents self-fueling render → raw loops).
+#   - atomic write (tmpfile + mv).
+#   - appends a line to ops/reports/refile-report.md.
+#   - NEVER writes to notes/. Compile is bin/vault-compile-replay's job.
+#
+# Provenance frontmatter keys:
+#   source, refiled_at, refiled_by, original_sha256
+#
+# Exit codes:
+#   0  landed (or duplicate, no-op)
+#   1  source missing / unreadable / under ops/out/ / other fail-loud
+#   2  misuse (bad argc, bad vault root)
+
+set -euo pipefail
+
+if [ $# -ne 2 ]; then
+  echo "usage: $0 <source-md> <vault-root>" >&2
+  exit 2
+fi
+
+SRC="$1"
+VAULT="$2"
+
+if [ ! -d "$VAULT" ]; then
+  echo "vault-refile-append: vault root $VAULT not a directory" >&2
+  exit 2
+fi
+
+RAW="$VAULT/ops/raw"
+REPORTS="$VAULT/ops/reports"
+
+if [ ! -d "$RAW" ]; then
+  echo "vault-refile-append: no $RAW ingress dir (create it first)" >&2
+  exit 2
+fi
+
+if [ ! -f "$SRC" ]; then
+  echo "vault-refile-append: source $SRC not found or not a file" >&2
+  exit 1
+fi
+
+# realpath both source and ops/out/ to refuse self-fueling loop
+# (portable realpath via python3)
+ABS_SRC="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SRC")"
+ABS_OUT="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$VAULT/ops/out")"
+case "$ABS_SRC" in
+  "$ABS_OUT"/*|"$ABS_OUT")
+    echo "vault-refile-append: refusing ops/out/ source (derived-only; would create self-fueling loop): $ABS_SRC" >&2
+    exit 1
+    ;;
+esac
+
+# compute SHA of ORIGINAL source bytes (never post-injection)
+SHA="$(shasum -a 256 "$SRC" | awk '{print $1}')"
+
+# idempotence check: scan existing ops/raw/*.md frontmatter for this SHA
+EXISTING=""
+for f in "$RAW"/*.md; do
+  [ -f "$f" ] || continue
+  if grep -q "^original_sha256: $SHA$" "$f" 2>/dev/null; then
+    EXISTING="$f"
+    break
+  fi
+done
+
+if [ -n "$EXISTING" ]; then
+  echo "vault-refile-append: duplicate sha256 — already landed at $EXISTING (no-op)"
+  exit 0
+fi
+
+# pick landing filename: basename of source, disambiguate if collision
+BASE="$(basename "$SRC")"
+case "$BASE" in
+  *.md) STEM="${BASE%.md}" ;;
+  *)    STEM="$BASE" ;;
+esac
+
+LANDED="$RAW/${STEM}.md"
+N=1
+while [ -e "$LANDED" ]; do
+  LANDED="$RAW/${STEM}-${N}.md"
+  N=$((N + 1))
+done
+
+NOW="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+BY="${REFILED_BY:-unknown}"
+
+TMP_OUT="$(mktemp "$RAW/.refile.XXXXXX")"
+# cleanup on failure
+trap '[ -f "$TMP_OUT" ] && rm -f "$TMP_OUT"' EXIT
+
+{
+  printf -- '---\n'
+  printf 'source: %s\n'           "$SRC"
+  printf 'refiled_at: %s\n'       "$NOW"
+  printf 'refiled_by: %s\n'       "$BY"
+  printf 'original_sha256: %s\n'  "$SHA"
+  printf -- '---\n\n'
+  cat "$SRC"
+} > "$TMP_OUT"
+
+# atomic landing
+mv "$TMP_OUT" "$LANDED"
+trap - EXIT
+
+# append to refile-report
+mkdir -p "$REPORTS"
+REPORT="$REPORTS/refile-report.md"
+if [ ! -f "$REPORT" ]; then
+  {
+    printf '# refile-report\n\n'
+    printf 'Log of external artifacts deposited via bin/vault-refile-append.\n\n'
+    printf '| refiled_at | source | original_sha256 | landed |\n'
+    printf '|---|---|---|---|\n'
+  } > "$REPORT"
+fi
+
+REL_LANDED="ops/raw/$(basename "$LANDED")"
+printf '| %s | %s | %s | %s |\n' "$NOW" "$SRC" "$SHA" "$REL_LANDED" >> "$REPORT"
+
+echo "Refiled $SRC -> $REL_LANDED (sha256=$SHA)"
