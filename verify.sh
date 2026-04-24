@@ -296,7 +296,22 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON + FAIL_COPILOT_EXT + FAIL_COMPILE_SLICE + FAIL_SEARCH_SLICE + FAIL_RENDER_SLICE + FAIL_REFILE_SLICE))
+FAIL_PROV_PROP=0
+section "11. Provenance propagation witness (refile → compile lineage)"
+if [ -x tests/test_provenance_propagation.sh ]; then
+  if ./tests/test_provenance_propagation.sh >/dev/null 2>&1; then
+    ok "tests/test_provenance_propagation.sh green"
+  else
+    bad "tests/test_provenance_propagation.sh failed"
+    ./tests/test_provenance_propagation.sh 2>&1 | sed 's/^/    /'
+    FAIL_PROV_PROP=1
+  fi
+else
+  warn "tests/test_provenance_propagation.sh not present — provenance propagation not wired"
+fi
+
+# ---------------------------------------------------------------------------
+TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON + FAIL_COPILOT_EXT + FAIL_COMPILE_SLICE + FAIL_SEARCH_SLICE + FAIL_RENDER_SLICE + FAIL_REFILE_SLICE + FAIL_PROV_PROP))
 
 printf "\n"
 printf "=========================================\n"
@@ -311,11 +326,12 @@ printf "  compile slice     : %s\n"  "$([ $FAIL_COMPILE_SLICE = 0 ] && echo PASS
 printf "  search slice      : %s\n"  "$([ $FAIL_SEARCH_SLICE = 0 ] && echo PASS || echo FAIL)"
 printf "  render slice      : %s\n"  "$([ $FAIL_RENDER_SLICE = 0 ] && echo PASS || echo FAIL)"
 printf "  refile slice      : %s\n"  "$([ $FAIL_REFILE_SLICE = 0 ] && echo PASS || echo FAIL)"
+printf "  provenance prop   : %s\n"  "$([ $FAIL_PROV_PROP = 0 ] && echo PASS || echo FAIL)"
 printf "  wiki-links (info) : %d broken\n" "$WIKI_BROKEN"
 printf "=========================================\n"
 
 if [ "$TOTAL_FAIL" = "0" ]; then
-  printf "${GRN}✅ PASSED${RST} (gating checks: 9/9)\n"
+  printf "${GRN}✅ PASSED${RST} (gating checks: 10/10)\n"
   exit 0
 else
   printf "${RED}❌ FAILED${RST} (%d gating check(s) failed)\n" "$TOTAL_FAIL"

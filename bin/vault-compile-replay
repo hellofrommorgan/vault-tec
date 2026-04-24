@@ -94,6 +94,24 @@ for raw in "$RAW"/*.md; do
   MOC_FILE="$NOTES/${TOPIC_SLUG}-MOC.md"
   REL_RAW="ops/raw/$(basename "$raw")"
 
+  # extract provenance from raw frontmatter (refile-landed artifacts).
+  # honest contract: only propagate keys that ACTUALLY exist in raw fm.
+  # never manufacture. Emitted empty string means "raw had no provenance".
+  PROV_SHA="$(python3 - "$raw" <<'PY'
+import sys, pathlib, re
+txt = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+if not txt or txt[0].strip() != "---":
+    sys.exit(0)
+for line in txt[1:]:
+    if line.strip() == "---":
+        break
+    m = re.match(r"^original_sha256:\s*(\S+)\s*$", line)
+    if m:
+        print(m.group(1))
+        break
+PY
+)"
+
   # split raw into sections by any-level heading. Each section = one note.
   # We use python3 for a deterministic, readable split.
   SECTIONS_JSON="$(python3 - "$raw" <<'PY'
@@ -148,6 +166,10 @@ PY
       printf 'source: %s\n' "$REL_RAW"
       printf 'topics: [%s]\n' "$TOPIC"
       printf 'compiled_at: %s\n' "$NOW"
+      if [ -n "$PROV_SHA" ]; then
+        printf 'refiled_from: %s\n' "$REL_RAW"
+        printf 'original_sha256: %s\n' "$PROV_SHA"
+      fi
       printf -- '---\n\n'
       printf '# %s\n\n' "$TITLE"
       printf '%s\n\n' "$BODY"
@@ -170,6 +192,10 @@ PY
     printf 'source: %s\n' "$REL_RAW"
     printf 'topics: [%s]\n' "$TOPIC"
     printf 'compiled_at: %s\n' "$NOW"
+    if [ -n "$PROV_SHA" ]; then
+      printf 'refiled_from: %s\n' "$REL_RAW"
+      printf 'original_sha256: %s\n' "$PROV_SHA"
+    fi
     printf -- '---\n\n'
     printf '# %s MOC\n\n' "$TOPIC"
     printf 'Map of content for topic **%s**, compiled from `%s`.\n\n' "$TOPIC" "$REL_RAW"

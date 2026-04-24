@@ -121,5 +121,22 @@ Baseline hash (to detect substrate drift): `$(cd ~/Projects/vault-tec && ./verif
 - Halt reason: NORTH STAR LOOP CLOSED. All 5 edges have concrete CLI witnesses (raw, compiled, queried, rendered, refiled). Pausing for operator steering on next trajectory (F5 /ask-the-wiki is now defensibly next; or F6 pdf-ingest to widen left-side; or replayer schema extension to propagate provenance into notes/).
 
 
+### slice 5 — provenance propagation into compiled notes (F12)
+
+- Trigger: operator steering selected A ("extend replayer to propagate provenance") to close the honesty gap flagged in slice 4.
+- SLICE: bin/vault-compile-replay now reads `original_sha256` from each raw file's frontmatter (added by refile). When present, every derived compiled artifact (seed notes AND topic MOC) carries two additional fm keys: `refiled_from: ops/raw/<file>` and `original_sha256: <sha>`.
+- Canonicality preserved: ops/raw/ remains sole ingress truth. Compile propagates — it does not originate — provenance. If raw has no `original_sha256`, notes get nothing (forbidden to manufacture lineage).
+- TDD: tests/test_provenance_propagation.sh failed RED as predicted (`Decision-concept.md missing 'refiled_from: ops/raw/external-insight.md' fm key`, etc.). Witness asserts:
+    1. every compiled note from a provenance-bearing raw carries refiled_from + original_sha256 matching the SHA of the ORIGINAL external source (pre-injection),
+    2. honest-contract guard: locally authored raws with no provenance produce notes with NO injected refiled_from/original_sha256,
+    3. idempotent across repeated compiles (provenance survives re-run).
+- Patch: three additions to vault-compile-replay — a python3 frontmatter sniff extracting `PROV_SHA` once per raw; two conditional printf blocks inside the seed-note writer and the MOC writer. ~20 lines net. No new schemas, no new files, no new binaries.
+- Wired as verify.sh gate #11 ("provenance prop"). Overall: 10/10 gates PASS. Baseline re-seeded.
+- Score: F12 added. passes:true, depends_on=[9,11]. Audit: 7/7 passed features verified.
+- Honesty upgrade: lineage is now reasonable from `notes/` alone. An operator can `grep -l 'original_sha256: <hash>' notes/` and get every compiled artifact derived from that specific external document — without touching ops/raw/.
+- Non-promises (still true): replayer still drops other unknown raw-frontmatter keys; only `original_sha256` is currently propagated. Agent-driven `/compile` is not bound by this contract (it may produce richer lineage). This slice closes the narrow lineage gap only.
+- Halt reason: slice bar met. Further work (F5 /ask-the-wiki, F6 pdf-ingest, or broader frontmatter propagation) is steering-dependent.
+
+
 
 

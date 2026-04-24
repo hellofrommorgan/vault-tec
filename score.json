@@ -178,11 +178,29 @@
         "emits ops/reports/refile-report.md append-only table with each landing",
         "exit 1 (fail-loud) on missing source; exit 2 on misuse/bad vault root",
         "tests/test_refile_slice.sh exits 0; wired as verify.sh gate #10",
-        "provenance lives in raw artifact + refile-report only — NOT promised to survive into notes/ (replayer emits fixed schema)"
+        "provenance lives in raw artifact + refile-report — and propagates into notes/ via F12"
       ],
       "passes": true,
       "depends_on": [
         9
+      ]
+    },
+    {
+      "id": 12,
+      "name": "provenance-propagation-witness",
+      "priority": 12,
+      "verification": [
+        "bin/vault-compile-replay reads original_sha256 from raw/*.md frontmatter",
+        "every compiled note (seed + MOC) derived from a provenance-bearing raw carries refiled_from: <rel-raw-path> and original_sha256: <sha> frontmatter keys",
+        "honest-contract guard: raws without provenance frontmatter produce notes with NO injected refiled_from/original_sha256 (compiler must never manufacture lineage)",
+        "idempotent across repeated compile invocations",
+        "tests/test_provenance_propagation.sh exits 0; wired as verify.sh gate #11",
+        "closes the F11-flagged gap: lineage is now reasonable from notes/ alone, not only from ops/raw/"
+      ],
+      "passes": true,
+      "depends_on": [
+        9,
+        11
       ]
     }
   ]
