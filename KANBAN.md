@@ -54,5 +54,24 @@ Baseline hash (to detect substrate drift): `$(cd ~/Projects/vault-tec && ./verif
   - sample run (/tmp/vt-witness): 3 seeds + 1 MOC + compile-report.md with `orphan_count=0`
 - Collective blind spot surfaced + respected: council flagged that markdown-only `/compile` is not a runtime witness because it requires Claude at runtime. Correction: ship a deterministic bash replayer alongside the markdown command so `verify.sh` can gate on REAL output shape without an LLM.
 - Honest partial: replay does NOT fabricate sibling links; F7 "≥2 links/note" stays false until agent-driven /compile lands.
-- Halt reason: bar met for slice 1. Pausing for operator review before slice 2.
+### slice 2 — wiki-search CLI over compiled output (F4)
+
+- Council: 20260424T053814Z, 9/9 seats. Convergence: "F4 bin/vault-search, scoped tighter than priors: plain line-oriented search over compiled notes, anti-cheat by deleting ops/raw/ before running search."
+- SLICE: bin/vault-search <vault> <query> searches COMPILED notes/ only; tests/test_search_slice.sh compiles a temp vault, scrubs ops/raw/, then asserts hits come from notes/ alone.
+- TDD: tests/test_search_slice.sh written FIRST, failed RED for the right reason (bin/vault-search missing).
+- Min-diff to green:
+  - bin/vault-search (bash + grep + tiny py3 relative-path rewriter; no deps).
+  - Exit codes: 0 hits · 1 miss (stderr fail-loud) · 2 misuse/empty-vault (stderr).
+  - Scope explicitly EXCLUDES ops/raw/ — raw is ingress, not canonical wiki.
+- Wired as verify.sh gating check #8 (7/7 PASS). Baseline re-seeded.
+- Score: F4 rewritten with honest scope (plain-text hits, not JSON/ranking/semantic). passes:true, depends_on=[9]. The prior F4 criteria ("returns ranked results as JSON") were aspirational and premature — deferred to a later slice.
+- Audit: 4/4 passed (F1, F4, F8, F9).
+- Runtime witness (before → after):
+  - before: no supported way to query compiled output from shell.
+  - after: `bin/vault-compile-replay <v> && bin/vault-search <v> "<token>"` returns `notes/<Slug>.md:<line>:<content>`.
+- Anti-cheat surfaced + respected: the test deletes ops/raw/ after compile, so any "search" that cheated by reading raw fails the slice.
+- Karpathy unlock: operator can now drop md in ops/raw/, run /compile, and QUERY the compiled wiki from shell — a new capability impossible pre-slice 2.
+- Honest partial: no agent-facing /search or /query command yet, no ranking, no semantic, no README update. All named as follow-ons.
+- Halt reason: bar met for slice 2. Pausing for operator review before slice 3.
+
 
