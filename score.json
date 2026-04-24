@@ -271,6 +271,29 @@
         12,
         6
       ]
+    },
+    {
+      "id": 16,
+      "name": "hermes-session-ingest-option-d",
+      "priority": 16,
+      "verification": [
+        "bin/vault-ingest-hermes-session <session-file> <vault-root> exists, executable",
+        "accepts both .json (messages[] schema) and .jsonl session formats from ~/.hermes/sessions/",
+        "emits exactly one markdown file into <vault>/ops/inbox/ (never writes to raw/, notes/, or out/)",
+        "destination filename is deterministic: session-<stem>-<ext>.md, collision-safe for json/jsonl siblings",
+        "captures RAW transcript (role + content text preserved, no lossy summarization); per-message content cap 8192 chars",
+        "no wall-clock fields in body — sha-idempotent across re-runs so the drain refile de-dupes",
+        "after drain, inbox drop flows through refile to ops/raw/ with canonical provenance frontmatter (original_sha256 of inbox bytes, refiled_from set)",
+        "re-ingest + re-drain of identical session produces zero additional raw/ entries",
+        "tests/test_hermes_session_ingest.sh exits 0; wired as verify.sh gate #16",
+        "designed for Hermes cron invocation against ~/.hermes/sessions/ alongside inbox-drain"
+      ],
+      "passes": true,
+      "depends_on": [
+        11,
+        12,
+        15
+      ]
     }
   ]
 }

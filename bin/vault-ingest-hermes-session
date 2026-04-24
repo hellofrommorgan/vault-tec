@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# bin/vault-ingest-hermes-session <session-file> <vault-root>
+#
+# Option D: ingest a Hermes session transcript into the vault as a raw
+# markdown drop, with a canonical header + role-delimited transcript body.
+#
+# Accepts both:
+#   - JSON sessions  (~/.hermes/sessions/session_*.json with a .messages[] array)
+#   - JSONL sessions (~/.hermes/sessions/*.jsonl, one message object per line)
+#
+# Contract:
+#   - Writes exactly one file into <vault>/ops/inbox/ (NOT raw/, NOT notes/).
+#     The drain (bin/vault-inbox-drain) promotes inbox → raw → notes and
+#     owns provenance; this script is a pure shape-converter.
+#   - Filename:  session-<session_id_or_basename_stem>.md
+#   - Idempotent at the filesystem level: re-running with the same input
+#     writes the same filename; if identical bytes already landed in
+#     ops/raw/, the drain's refile step will sha-idempotent-skip it.
+#   - Captures RAW transcript text (no lossy summarization). Tool call
+#     outputs are truncated at a generous cap (8k chars/msg) to keep
+#     pathological transcripts from ballooning the vault.
+#
+# Exit codes:
+#   0 — inbox drop written
+#   1 — input unreadable / parse failure
+#   2 — misuse
+#
+# This is deliberately not run by Claude Code hooks; it is meant to be
+# triggered by the Hermes cron job that tails new session files.
+
+set -euo pipefail
+
+usage() { echo "usage: $0 <session-file> <vault-root>" >&2; exit 2; }
+[ $# -eq 2 ] || usage
+
+SRC="$1"
+VAULT="$2"
+
+[ -f "$SRC" ]        || { echo "vault-ingest-hermes-session: no such file: $SRC" >&2; exit 1; }
+[ -d "$VAULT" ]      || { echo "vault-ingest-hermes-session: vault not a directory: $VAULT" >&2; exit 2; }
+
+INBOX="$VAULT/ops/inbox"
+mkdir -p "$INBOX"
+
+# Emit the canonicalized markdown to stdout of python, redirect into a tmp file,
+# then atomic mv into inbox/. All heavy lifting happens in python for JSON parsing.
+TMP="$(mktemp -t hermsess.XXXXXX).md"
+trap 'rm -f "$TMP"' EXIT
+
+python3 - "$SRC" > "$TMP" <<'PY'
+import json, sys, os, datetime, pathlib, re
+
+src = sys.argv[1]
+stem = pathlib.Path(src).stem
+
+MAX_CHARS = 8192  # per-message content cap
+
+def load_messages(path):
+    if path.endswith(".jsonl"):
+        msgs = []
+        meta = {"session_id": stem}
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                # jsonl may have session-level records; only messages have 'role'
+                if isinstance(obj, dict) and "role" in obj:
+                    msgs.append(obj)
+                elif isinstance(obj, dict) and obj.get("type") in ("session_start","meta"):
+                    for k in ("session_id","model","platform","session_start"):
+                        if k in obj: meta[k] = obj[k]
+        return meta, msgs
+    else:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            data = json.load(fh)
+        meta = {k: data.get(k) for k in ("session_id","model","platform","session_start","last_updated") if k in data}
+        meta.setdefault("session_id", stem)
+        return meta, data.get("messages", [])
+
+def render_content(c):
+    if c is None:
+        return ""
+    if isinstance(c, str):
+        return c
+    if isinstance(c, list):
+        out = []
+        for part in c:
+            if isinstance(part, dict):
+                t = part.get("type") or part.get("role") or ""
+                if "text" in part and isinstance(part["text"], str):
+                    out.append(part["text"])
+                elif "content" in part and isinstance(part["content"], str):
+                    out.append(part["content"])
+                elif t:
+                    out.append(f"[{t}]")
+                else:
+                    out.append(json.dumps(part)[:512])
+            else:
+                out.append(str(part))
+        return "\n\n".join(out)
+    if isinstance(c, dict):
+        return json.dumps(c, indent=2)[:MAX_CHARS]
+    return str(c)
+
+meta, msgs = load_messages(src)
+sess_id = meta.get("session_id") or stem
+model = meta.get("model") or ""
+started = meta.get("session_start") or ""
+
+now = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+# Title is stable and deterministic, so refile dedupe works.
+title = f"Hermes Session — {sess_id}"
+
+# Header body (NOT YAML — the drain's refile adds canonical frontmatter).
+# IMPORTANT: do NOT include a wall-clock "ingested_at" field here, or the
+# bytes shift on every re-run and sha-idempotence breaks.
+lines = []
+lines.append(f"# {title}")
+lines.append("")
+lines.append(f"- session_id: `{sess_id}`")
+if model:   lines.append(f"- model: `{model}`")
+if started: lines.append(f"- session_start: `{started}`")
+lines.append(f"- source_file: `{src}`")
+lines.append(f"- message_count: `{len(msgs)}`")
+lines.append(f"- origin: hermes-session-ingest (Option D raw transcript)")
+lines.append("")
+lines.append("## Transcript")
+lines.append("")
+
+for i, m in enumerate(msgs):
+    role = m.get("role") or "?"
+    content = render_content(m.get("content"))
+    if len(content) > MAX_CHARS:
+        content = content[:MAX_CHARS] + f"\n\n_[truncated at {MAX_CHARS} chars]_"
+    lines.append(f"### {i+1}. {role}")
+    lines.append("")
+    # If content already contains code blocks, keep them intact; otherwise
+    # prose flows naturally as markdown.
+    lines.append(content if content.strip() else "_(empty)_")
+    lines.append("")
+
+sys.stdout.write("\n".join(lines) + "\n")
+PY
+
+# Deterministic destination filename so idempotence works.
+# Include source extension so .json and .jsonl with the same stem don't collide.
+SRC_BASE="$(basename "$SRC")"
+SRC_EXT_LC="$(printf '%s' "${SRC_BASE##*.}" | tr '[:upper:]' '[:lower:]')"
+SRC_STEM="${SRC_BASE%.*}"
+DEST_NAME="session-${SRC_STEM}-${SRC_EXT_LC}.md"
+DEST="$INBOX/$DEST_NAME"
+
+mv -f "$TMP" "$DEST"
+trap - EXIT
+
+echo "$DEST"
+exit 0

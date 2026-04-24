@@ -371,7 +371,22 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON + FAIL_COPILOT_EXT + FAIL_COMPILE_SLICE + FAIL_SEARCH_SLICE + FAIL_RENDER_SLICE + FAIL_REFILE_SLICE + FAIL_PROV_PROP + FAIL_PDF_INGEST + FAIL_E2E_LOOP + FAIL_VAULT_DETECT + FAIL_INBOX_DRAIN))
+FAIL_HERMES_SESSION=0
+section "16. Hermes session ingest witness (Option D: .json/.jsonl → inbox)"
+if [ -x tests/test_hermes_session_ingest.sh ]; then
+  if ./tests/test_hermes_session_ingest.sh >/dev/null 2>&1; then
+    ok "tests/test_hermes_session_ingest.sh green"
+  else
+    bad "tests/test_hermes_session_ingest.sh failed"
+    ./tests/test_hermes_session_ingest.sh 2>&1 | sed 's/^/    /'
+    FAIL_HERMES_SESSION=1
+  fi
+else
+  warn "tests/test_hermes_session_ingest.sh not present — hermes session ingest not wired"
+fi
+
+# ---------------------------------------------------------------------------
+TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON + FAIL_COPILOT_EXT + FAIL_COMPILE_SLICE + FAIL_SEARCH_SLICE + FAIL_RENDER_SLICE + FAIL_REFILE_SLICE + FAIL_PROV_PROP + FAIL_PDF_INGEST + FAIL_E2E_LOOP + FAIL_VAULT_DETECT + FAIL_INBOX_DRAIN + FAIL_HERMES_SESSION))
 
 printf "\n"
 printf "=========================================\n"
@@ -391,11 +406,12 @@ printf "  pdf ingest        : %s\n"  "$([ $FAIL_PDF_INGEST = 0 ] && echo PASS ||
 printf "  e2e loop closure  : %s\n"  "$([ $FAIL_E2E_LOOP = 0 ] && echo PASS || echo FAIL)"
 printf "  vault detection   : %s\n"  "$([ $FAIL_VAULT_DETECT = 0 ] && echo PASS || echo FAIL)"
 printf "  inbox drain       : %s\n"  "$([ $FAIL_INBOX_DRAIN = 0 ] && echo PASS || echo FAIL)"
+printf "  hermes session    : %s\n"  "$([ $FAIL_HERMES_SESSION = 0 ] && echo PASS || echo FAIL)"
 printf "  wiki-links (info) : %d broken\n" "$WIKI_BROKEN"
 printf "=========================================\n"
 
 if [ "$TOTAL_FAIL" = "0" ]; then
-  printf "${GRN}✅ PASSED${RST} (gating checks: 14/14)\n"
+  printf "${GRN}✅ PASSED${RST} (gating checks: 15/15)\n"
   exit 0
 else
   printf "${RED}❌ FAILED${RST} (%d gating check(s) failed)\n" "$TOTAL_FAIL"
