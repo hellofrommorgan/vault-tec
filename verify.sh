@@ -341,7 +341,22 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON + FAIL_COPILOT_EXT + FAIL_COMPILE_SLICE + FAIL_SEARCH_SLICE + FAIL_RENDER_SLICE + FAIL_REFILE_SLICE + FAIL_PROV_PROP + FAIL_PDF_INGEST + FAIL_E2E_LOOP))
+FAIL_VAULT_DETECT=0
+section "14. Vault detection witness (CLAUDE.md or AGENTS.md marker)"
+if [ -x tests/test_vault_detection.sh ]; then
+  if ./tests/test_vault_detection.sh >/dev/null 2>&1; then
+    ok "tests/test_vault_detection.sh green"
+  else
+    bad "tests/test_vault_detection.sh failed"
+    ./tests/test_vault_detection.sh 2>&1 | sed 's/^/    /'
+    FAIL_VAULT_DETECT=1
+  fi
+else
+  warn "tests/test_vault_detection.sh not present — vault detection not wired"
+fi
+
+# ---------------------------------------------------------------------------
+TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON + FAIL_COPILOT_EXT + FAIL_COMPILE_SLICE + FAIL_SEARCH_SLICE + FAIL_RENDER_SLICE + FAIL_REFILE_SLICE + FAIL_PROV_PROP + FAIL_PDF_INGEST + FAIL_E2E_LOOP + FAIL_VAULT_DETECT))
 
 printf "\n"
 printf "=========================================\n"
@@ -359,11 +374,12 @@ printf "  refile slice      : %s\n"  "$([ $FAIL_REFILE_SLICE = 0 ] && echo PASS 
 printf "  provenance prop   : %s\n"  "$([ $FAIL_PROV_PROP = 0 ] && echo PASS || echo FAIL)"
 printf "  pdf ingest        : %s\n"  "$([ $FAIL_PDF_INGEST = 0 ] && echo PASS || echo FAIL)"
 printf "  e2e loop closure  : %s\n"  "$([ $FAIL_E2E_LOOP = 0 ] && echo PASS || echo FAIL)"
+printf "  vault detection   : %s\n"  "$([ $FAIL_VAULT_DETECT = 0 ] && echo PASS || echo FAIL)"
 printf "  wiki-links (info) : %d broken\n" "$WIKI_BROKEN"
 printf "=========================================\n"
 
 if [ "$TOTAL_FAIL" = "0" ]; then
-  printf "${GRN}✅ PASSED${RST} (gating checks: 12/12)\n"
+  printf "${GRN}✅ PASSED${RST} (gating checks: 13/13)\n"
   exit 0
 else
   printf "${RED}❌ FAILED${RST} (%d gating check(s) failed)\n" "$TOTAL_FAIL"

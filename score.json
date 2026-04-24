@@ -233,6 +233,20 @@
         10,
         11
       ]
+    },
+    {
+      "id": 14,
+      "name": "vault-detection-agents-md",
+      "priority": 14,
+      "verification": [
+        "hooks/scripts/vault-session-start.sh, vault-session-end.sh, vault-precompact.sh accept AGENTS.md as a vault marker (not only CLAUDE.md)",
+        "guard still requires self/ and notes/ to be present",
+        "bare directory without any marker still short-circuits the hook",
+        "tests/test_vault_detection.sh exits 0; wired as verify.sh gate #14",
+        "unblocks ~/Mind (AGENTS.md vault) from transparently participating in vault-tec hooks"
+      ],
+      "passes": true,
+      "depends_on": []
     }
   ]
 }
