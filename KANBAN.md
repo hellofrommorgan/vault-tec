@@ -163,3 +163,22 @@ Baseline hash (to detect substrate drift): `$(cd ~/Projects/vault-tec && ./verif
 
 
 
+
+
+### campaign — 10-loop autonomous council run — 2026-04-24
+
+- Operator mandate: run exactly 10 sequential council-steered TDD slices against /Users/morgan/Projects/vault-tec.
+- Council: single-seat first-principles pass via `copilot --model claude-opus-4.6 --allow-all-tools -p`. Artifact: /tmp/vt-council-plan.txt.
+- Plan (slice title only — full spec per-commit):
+  1. E2E loop-closure witness (tests/test_e2e_loop.sh + verify.sh gate #13)
+  2. vault-search --context snippets
+  3. bin/vault-orphans + gate #14
+  4. bin/vault-render-index + gate #15
+  5. bin/vault-ingest-docx (MarkItDown seam widen)
+  6. compile propagation: refiled_at, source_url
+  7. vault-search --status / --tag frontmatter filter
+  8. commands/query.md stub (F5 surface-only, no LLM in verify)
+  9. refile-report provenance summary columns
+  10. dead-code subtraction sweep (discovery-dependent)
+- Halt conditions unchanged: .halt, tree damage, ledger-reality divergence, substrate drift, genuine thrash. Count mandate overrides single-slice-bar-met halt.
+

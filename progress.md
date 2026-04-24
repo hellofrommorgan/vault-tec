@@ -4,7 +4,7 @@
 
 See `score.json` for the authoritative feature ledger. At the time of this update:
 
-- F1 verify-sh-green — PASS (gate exists, 11/11 checks green)
+- F1 verify-sh-green — PASS (gate exists, 12/12 checks green)
 - F2 hooks-shellcheck-clean — READY, unverified
 - F3 frontmatter-lint-clean — READY, unverified
 - F4 wiki-search-cli — PASS ← slice 2 (queried step)
@@ -16,6 +16,7 @@ See `score.json` for the authoritative feature ledger. At the time of this updat
 - F10 render-slice-deterministic-witness — PASS ← slice 3 (rendered step)
 - F11 refile-slice-deterministic-witness — PASS ← slice 4 (refiled step — LOOP CLOSED)
 - F12 provenance-propagation-witness — PASS ← slice 5 (lineage from notes/ alone)
+- F13 e2e-loop-closure-witness — PASS ← campaign L1 (full chain refile→compile→search→render)
 
 North Star loop — all 5 edges have concrete CLI witnesses:
   raw      ops/raw/

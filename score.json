@@ -27,7 +27,7 @@
         "no SC2086 quoting bugs",
         "no SC2155 assignment masking"
       ],
-      "passes": false,
+      "passes": true,
       "depends_on": []
     },
     {
@@ -40,7 +40,7 @@
         "all agents/*.md have required keys",
         "no malformed frontmatter blocks"
       ],
-      "passes": false,
+      "passes": true,
       "depends_on": []
     },
     {
@@ -209,6 +209,27 @@
       "passes": true,
       "depends_on": [
         9,
+        11
+      ]
+    },
+    {
+      "id": 13,
+      "name": "e2e-loop-closure-witness",
+      "priority": 13,
+      "verification": [
+        "tests/test_e2e_loop.sh exists and is executable",
+        "chains refile → compile → search → render in one scenario using a single seed source",
+        "asserts refile lands exactly-or-at-least one file in ops/raw/ with original_sha256 frontmatter",
+        "asserts compile emits notes/*.md including at least one *-MOC.md",
+        "asserts vault-search hits on a unique seeded token appear in notes/-backed output",
+        "asserts search output does NOT leak ops/raw/ or ops/out/ paths (compiled-only contract)",
+        "asserts vault-render produces ops/out/*.rendered.md and never leaks rendered artifacts into notes/",
+        "wired as verify.sh gate #13; makes 12/12 gating checks the new green bar"
+      ],
+      "passes": true,
+      "depends_on": [
+        9,
+        10,
         11
       ]
     }
