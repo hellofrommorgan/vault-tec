@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# bin/vault-render <vault-root> <note-slug>
+#
+# Deterministic single-note renderer. Reads the compiled truth surface
+# $VAULT/notes/<slug>.md and writes a derived artifact to
+# $VAULT/ops/out/<slug>.rendered.md.
+#
+# Transforms:
+#   1. strip YAML frontmatter (--- ... --- at top) if present
+#   2. rewrite [[wikilink]] → [wikilink](./wikilink.md)
+#      and [[wikilink|alias]] → [alias](./wikilink.md)
+#   3. prepend a TOC of ## headings if any exist
+#
+# Strict contract:
+#   - notes/ is canonical; ops/out/ is DERIVED ONLY.
+#   - never reads ops/raw/, never mutates notes/.
+#   - fail-loud on missing source; exit 1.
+#   - exit 2 on misuse / missing vault / missing notes dir.
+#   - byte-identical output on rerun (determinism).
+#
+# Out of scope: batch render, HTML/PDF/Marp, MOC rendering, ops/out/
+# re-indexing into search.
+
+set -euo pipefail
+
+if [ $# -ne 2 ]; then
+  echo "usage: $0 <vault-root> <note-slug>" >&2
+  exit 2
+fi
+
+VAULT="$1"
+SLUG="$2"
+NOTES="$VAULT/notes"
+OUT_DIR="$VAULT/ops/out"
+SRC="$NOTES/${SLUG}.md"
+
+if [ ! -d "$NOTES" ]; then
+  echo "vault-render: no compiled notes dir at $NOTES (P10)" >&2
+  exit 2
+fi
+
+if [ ! -f "$SRC" ]; then
+  echo "vault-render: compiled note $SRC not found; run /compile first" >&2
+  exit 1
+fi
+
+mkdir -p "$OUT_DIR"
+OUT="$OUT_DIR/${SLUG}.rendered.md"
+TMP_OUT="$(mktemp)"
+trap 'rm -f "$TMP_OUT"' EXIT
+
+python3 -c '
+import sys, re, pathlib
+src = pathlib.Path(sys.argv[1])
+out = pathlib.Path(sys.argv[2])
+text = src.read_text(encoding="utf-8")
+
+# 1. strip leading YAML frontmatter
+lines = text.splitlines()
+body_start = 0
+if lines and lines[0].strip() == "---":
+    # find closing ---
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            body_start = i + 1
+            break
+body_lines = lines[body_start:]
+
+# also drop trailing replay footer fence if present (--- then _Compiled from [[...]]._)
+# only strip trailing --- block with "_Compiled from" line inside
+while body_lines and body_lines[-1].strip() == "":
+    body_lines.pop()
+# detect last "---" block
+if len(body_lines) >= 2 and body_lines[-2].strip() == "---" and body_lines[-1].startswith("_Compiled from"):
+    body_lines = body_lines[:-2]
+    while body_lines and body_lines[-1].strip() == "":
+        body_lines.pop()
+
+body = "\n".join(body_lines).rstrip() + "\n"
+
+# 2. rewrite [[target|alias]] and [[target]]
+def rewrite_link(m):
+    inner = m.group(1)
+    if "|" in inner:
+        target, alias = inner.split("|", 1)
+    else:
+        target, alias = inner, inner
+    target = target.strip()
+    alias = alias.strip()
+    # slugify conservatively: replace spaces with hyphens
+    target_slug = re.sub(r"\s+", "-", target)
+    return f"[{alias}](./{target_slug}.md)"
+
+body = re.sub(r"\[\[([^\]]+)\]\]", rewrite_link, body)
+
+# 3. TOC from ## headings (exact level 2)
+toc_entries = []
+for line in body.splitlines():
+    m = re.match(r"^##\s+(.+?)\s*$", line)
+    if m:
+        h = m.group(1)
+        anchor = re.sub(r"[^A-Za-z0-9\s-]", "", h).strip().lower()
+        anchor = re.sub(r"\s+", "-", anchor)
+        toc_entries.append((h, anchor))
+
+toc_block = ""
+if toc_entries:
+    toc_block = "## Table of Contents\n\n"
+    for h, a in toc_entries:
+        toc_block += f"- [{h}](#{a})\n"
+    toc_block += "\n"
+
+out.write_text(toc_block + body, encoding="utf-8")
+' "$SRC" "$TMP_OUT"
+
+mv "$TMP_OUT" "$OUT"
+trap - EXIT
+
+echo "Rendered $NOTES/${SLUG}.md -> $OUT_DIR/${SLUG}.rendered.md"

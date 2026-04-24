@@ -74,4 +74,24 @@ Baseline hash (to detect substrate drift): `$(cd ~/Projects/vault-tec && ./verif
 - Honest partial: no agent-facing /search or /query command yet, no ranking, no semantic, no README update. All named as follow-ons.
 - Halt reason: bar met for slice 2. Pausing for operator review before slice 3.
 
+### slice 3 — single-note deterministic renderer (F10)
+
+- Council: 20260424T054529Z, 9/9 seats. Convergence: "bin/vault-render — strict derived-only ops/out/, advances 'rendered' before /ask-the-wiki and before PDF ingest."
+- SLICE: bin/vault-render <vault> <slug> reads notes/<slug>.md and writes ops/out/<slug>.rendered.md with: (1) YAML frontmatter stripped (plus trailing "_Compiled from_" footer from replay), (2) [[wiki]] and [[wiki|alias]] rewritten to [alias](./wiki.md), (3) "## Table of Contents" prepended when ## headings exist.
+- Canonicality: notes/ stays the single compiled truth surface; ops/out/ is derived-only, explicitly NOT indexed by bin/vault-search and NOT re-ingested by /compile. No second truth surface.
+- TDD: tests/test_render_slice.sh failed RED for the right reason (bin/vault-render missing). Test seeds raw → compile → render MOC → assert transforms → determinism diff → anti-cheat delete source → misuse check.
+- Renders MOC (intro-MOC.md) because replayer MOCs carry real ## headings + [[wikilinks]]; per-section atomic notes are intentionally minimal.
+- Wired as verify.sh gate #9 (8/8 PASS). Baseline re-seeded.
+- Score: F10 added with full verification criteria; passes:true, depends_on=[9].
+- Audit: 5/5 passed (F1, F4, F8, F9, F10).
+- Runtime witness (before → after):
+  - before: `test -f ops/out/intro-MOC.rendered.md; echo $?` → 1
+  - after: `bin/vault-render $V intro-MOC` → ops/out/intro-MOC.rendered.md with TOC + rewritten links + no frontmatter. Byte-identical on rerun.
+- Collective blind spot surfaced + respected: council explicitly rejected /ask-the-wiki as next slice — it's easy to fake (LLM seam hard to witness in CI) before a deterministic render edge exists. And rejected PDF ingest — widens left side before closing right side of the loop.
+- Anti-cheat respected: test deletes compiled source between runs; `cp notes/foo.md ops/out/foo.rendered.md` fails because (a) [[wikilinks]] still present and (b) TOC header missing and (c) delete-source still succeeds if renderer silently recreates.
+- Karpathy unlock: `ops/raw/foo.md → /compile → bin/vault-render → open ops/out/foo.rendered.md` — first honest compiled→rendered artifact path. Operator can now share rendered markdown externally without leaking vault frontmatter or obsidian-only wikilinks.
+- Honest partial: single-note only (no batch), markdown-only (no HTML/PDF/Marp), MOC is the exemplar because atomic notes lack H2s, renderer not wired into /compile or an agent-facing /render command yet. All named as follow-ons.
+- Halt reason: bar met for slice 3. North Star: raw ✅ → compiled ✅ → queried ✅ → rendered ✅ → refiled ⬜. Pausing for operator review before slice 4 (refiled).
+
+
 

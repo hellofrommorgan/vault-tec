@@ -136,11 +136,30 @@
         "produced notes carry 'status: seed' frontmatter",
         "a *MOC*.md is produced with [[wiki-links]] to all seeds",
         "ops/reports/compile-report.md is emitted with 'orphan_count=N' line",
-        "verify.sh includes this as a gating check (6/6)"
+        "verify.sh includes this as a gating check (8/8)"
       ],
       "passes": true,
       "depends_on": [
         1
+      ]
+    },
+    {
+      "id": 10,
+      "name": "render-slice-deterministic-witness",
+      "priority": 10,
+      "verification": [
+        "bin/vault-render <vault> <slug> exists and is executable",
+        "reads only notes/<slug>.md (compiled truth), never ops/raw/",
+        "writes ops/out/<slug>.rendered.md (derived-only; never canonical)",
+        "strips YAML frontmatter, rewrites [[wikilinks]] → [name](./name.md), prepends '## Table of Contents'",
+        "byte-identical on rerun (determinism)",
+        "exit 1 (fail-loud stderr) when source note missing; exit 2 on misuse",
+        "tests/test_render_slice.sh exits 0; wired as verify.sh gate #9",
+        "ops/out/ is derivative — NOT indexed by bin/vault-search, NOT re-ingested by compile"
+      ],
+      "passes": true,
+      "depends_on": [
+        9
       ]
     }
   ]

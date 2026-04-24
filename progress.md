@@ -4,7 +4,7 @@
 
 See `score.json` for the authoritative feature ledger. At the time of this update:
 
-- F1 verify-sh-green — PASS (gate exists, 7/7 checks green)
+- F1 verify-sh-green — PASS (gate exists, 8/8 checks green)
 - F2 hooks-shellcheck-clean — READY, unverified
 - F3 frontmatter-lint-clean — READY, unverified
 - F4 wiki-search-cli — PASS ← slice 2 (queried step)
@@ -13,6 +13,7 @@ See `score.json` for the authoritative feature ledger. At the time of this updat
 - F7 raw-compile-command — READY, unverified (depends on F9; requires agent-driven compile, not replay)
 - F8 copilot-cli-parity — PASS
 - F9 compile-slice-deterministic-witness — PASS ← slice 1 (compiled step)
+- F10 render-slice-deterministic-witness — PASS ← slice 3 (rendered step)
 
 ## North Star runtime witness
 
