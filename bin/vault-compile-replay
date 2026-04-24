@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+# bin/vault-compile-replay <vault-root>
+#
+# Deterministic, rule-based replay of the /compile command surface.
+# This is NOT the agent-driven compile — it is a fresh-clone-safe witness
+# that proves the vault SHAPE and write contract without requiring an LLM
+# at runtime. The agent invocation of /compile may produce richer output;
+# both must satisfy commands/compile.md's contract.
+#
+# Exits non-zero on any contract violation (P10: fail loud, not silent).
+#
+# Usage: bin/vault-compile-replay /path/to/vault
+#   Expects <vault>/ops/raw/*.md to exist.
+#   Writes <vault>/notes/*.md and <vault>/ops/reports/compile-report.md.
+
+set -euo pipefail
+
+if [ $# -ne 1 ]; then
+  echo "usage: $0 <vault-root>" >&2
+  exit 2
+fi
+
+VAULT="$1"
+RAW="$VAULT/ops/raw"
+NOTES="$VAULT/notes"
+REPORTS="$VAULT/ops/reports"
+
+if [ ! -d "$RAW" ]; then
+  echo "vault-compile-replay: missing $RAW (P10: fail loud)" >&2
+  exit 1
+fi
+
+mkdir -p "$NOTES" "$REPORTS"
+
+NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+NOTES_CREATED=0
+NOTES_UPDATED=0
+RAW_PROCESSED=0
+SKIPPED=0
+
+# slugify: lower + strip punct + collapse spaces to hyphens. Title in note
+# frontmatter preserves human-readable form.
+slugify() {
+  printf '%s' "$1" | python3 -c '
+import sys, re
+t = sys.stdin.read().strip()
+t = re.sub(r"[^A-Za-z0-9\s-]", "", t)
+t = re.sub(r"\s+", "-", t).strip("-")
+print(t)
+'
+}
+
+# noun-phrasify a heading so P2 (composable 3-10 word noun phrase title)
+# is approximated. Drops trailing punctuation, collapses whitespace.
+titleify() {
+  printf '%s' "$1" | python3 -c '
+import sys, re
+t = sys.stdin.read().strip()
+t = re.sub(r"\s+", " ", t)
+t = t.strip(" .:;!?")
+# count words
+w = t.split()
+if len(w) < 2:
+    # pad ambiguous single-word to a still-composable form
+    t = t + " (concept)"
+elif len(w) > 10:
+    t = " ".join(w[:10])
+print(t)
+'
+}
+
+# topic derived from raw filename stem (deterministic, no NLP)
+derive_topic() {
+  local base
+  base="$(basename "$1" .md)"
+  # capitalize words split on - _ space
+  printf '%s' "$base" | python3 -c '
+import sys
+s = sys.stdin.read().strip().replace("_"," ").replace("-"," ")
+print(" ".join(w.capitalize() for w in s.split()))
+'
+}
+
+# track links per note for orphan calculation
+WIKI_TMP="$(mktemp)"
+: > "$WIKI_TMP"
+
+# process each raw file
+shopt -s nullglob
+for raw in "$RAW"/*.md; do
+  RAW_PROCESSED=$((RAW_PROCESSED + 1))
+  TOPIC="$(derive_topic "$raw")"
+  TOPIC_SLUG="$(slugify "$TOPIC")"
+  MOC_FILE="$NOTES/${TOPIC_SLUG}-MOC.md"
+  REL_RAW="ops/raw/$(basename "$raw")"
+
+  # split raw into sections by any-level heading. Each section = one note.
+  # We use python3 for a deterministic, readable split.
+  SECTIONS_JSON="$(python3 - "$raw" <<'PY'
+import sys, re, json, pathlib
+txt = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+# split on lines starting with 1-6 # followed by space. Keep the heading.
+parts = re.split(r'(?m)^(#{1,6}\s+.+)$', txt)
+# parts = [pre, heading1, body1, heading2, body2, ...]
+sections = []
+i = 1
+while i < len(parts):
+    heading = parts[i].strip()
+    body = parts[i+1].strip() if (i + 1) < len(parts) else ""
+    # heading text without leading #s
+    heading_text = re.sub(r'^#{1,6}\s+', '', heading).strip()
+    if heading_text:
+        sections.append({"heading": heading_text, "body": body})
+    i += 2
+print(json.dumps(sections))
+PY
+)"
+
+  SECTION_COUNT="$(printf '%s' "$SECTIONS_JSON" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
+  if [ "$SECTION_COUNT" = "0" ]; then
+    SKIPPED=$((SKIPPED + 1))
+    continue
+  fi
+
+  # collect seed titles for this raw file to link from MOC
+  SEED_TITLES_FILE="$(mktemp)"
+  : > "$SEED_TITLES_FILE"
+
+  # write each section as an atomic seed note
+  IDX=0
+  while [ "$IDX" -lt "$SECTION_COUNT" ]; do
+    HEADING="$(printf '%s' "$SECTIONS_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[$IDX]['heading'])")"
+    BODY="$(printf '%s' "$SECTIONS_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[$IDX]['body'])")"
+    TITLE="$(titleify "$HEADING")"
+    SLUG="$(slugify "$TITLE")"
+    NOTE_FILE="$NOTES/${SLUG}.md"
+
+    if [ -f "$NOTE_FILE" ]; then
+      NOTES_UPDATED=$((NOTES_UPDATED + 1))
+    else
+      NOTES_CREATED=$((NOTES_CREATED + 1))
+    fi
+
+    {
+      printf -- '---\n'
+      printf 'title: %s\n' "$TITLE"
+      printf 'status: seed\n'
+      printf 'source: %s\n' "$REL_RAW"
+      printf 'topics: [%s]\n' "$TOPIC"
+      printf 'compiled_at: %s\n' "$NOW"
+      printf -- '---\n\n'
+      printf '# %s\n\n' "$TITLE"
+      printf '%s\n\n' "$BODY"
+      printf -- '---\n'
+      printf '_Compiled from [[%s-MOC]]._\n' "$TOPIC_SLUG"
+    } > "$NOTE_FILE"
+
+    # record the outbound MOC link for orphan calculation
+    printf '%s\t%s\n' "$SLUG" "${TOPIC_SLUG}-MOC" >> "$WIKI_TMP"
+
+    printf '%s\n' "$TITLE" >> "$SEED_TITLES_FILE"
+    IDX=$((IDX + 1))
+  done
+
+  # write/refresh the topic MOC with [[wiki-links]] to every seed
+  {
+    printf -- '---\n'
+    printf 'title: %s MOC\n' "$TOPIC"
+    printf 'status: moc\n'
+    printf 'source: %s\n' "$REL_RAW"
+    printf 'topics: [%s]\n' "$TOPIC"
+    printf 'compiled_at: %s\n' "$NOW"
+    printf -- '---\n\n'
+    printf '# %s MOC\n\n' "$TOPIC"
+    printf 'Map of content for topic **%s**, compiled from `%s`.\n\n' "$TOPIC" "$REL_RAW"
+    printf '## Seeds\n\n'
+    while IFS= read -r t; do
+      [ -n "$t" ] || continue
+      printf -- '- [[%s]]\n' "$t"
+      # record inbound link for orphan calc
+      tslug="$(slugify "$t")"
+      printf '%s\t%s\n' "${TOPIC_SLUG}-MOC" "$tslug" >> "$WIKI_TMP"
+    done < "$SEED_TITLES_FILE"
+  } > "$MOC_FILE"
+
+  rm -f "$SEED_TITLES_FILE"
+done
+
+# orphan count: notes (non-MOC) with zero inbound links in WIKI_TMP
+ORPHAN_COUNT=0
+for note in "$NOTES"/*.md; do
+  [ -f "$note" ] || continue
+  base="$(basename "$note" .md)"
+  case "$base" in
+    *-MOC|*MOC) continue ;;
+  esac
+  # any line whose target column matches this slug?
+  if ! awk -F'\t' -v t="$base" '$2==t {found=1; exit} END {exit !found}' "$WIKI_TMP"; then
+    ORPHAN_COUNT=$((ORPHAN_COUNT + 1))
+  fi
+done
+
+rm -f "$WIKI_TMP"
+
+REPORT="$REPORTS/compile-report.md"
+{
+  printf -- '---\n'
+  printf 'title: Compile Report\n'
+  printf 'status: report\n'
+  printf 'compiled_at: %s\n' "$NOW"
+  printf -- '---\n\n'
+  printf '# Compile Report\n\n'
+  printf 'orphan_count=%d\n' "$ORPHAN_COUNT"
+  printf 'compiled_at=%s\n' "$NOW"
+  printf 'notes_created=%d\n' "$NOTES_CREATED"
+  printf 'notes_updated=%d\n' "$NOTES_UPDATED"
+  printf 'raw_files_processed=%d\n' "$RAW_PROCESSED"
+  printf 'skipped=%d\n' "$SKIPPED"
+  printf '\n'
+  printf 'Replayer: deterministic heading-split. Not an LLM compile.\n'
+  printf 'Witness target: tests/test_compile_slice.sh\n'
+} > "$REPORT"
+
+printf 'vault-compile-replay: %d created, %d updated, %d orphans\n' \
+  "$NOTES_CREATED" "$NOTES_UPDATED" "$ORPHAN_COUNT"

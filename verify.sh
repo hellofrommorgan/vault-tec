@@ -236,7 +236,22 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON + FAIL_COPILOT_EXT))
+FAIL_COMPILE_SLICE=0
+section "7. Compile slice runtime witness (North Star: raw -> compiled wiki)"
+if [ -x tests/test_compile_slice.sh ]; then
+  if ./tests/test_compile_slice.sh >/dev/null 2>&1; then
+    ok "tests/test_compile_slice.sh green"
+  else
+    bad "tests/test_compile_slice.sh failed"
+    ./tests/test_compile_slice.sh 2>&1 | sed 's/^/    /'
+    FAIL_COMPILE_SLICE=1
+  fi
+else
+  warn "tests/test_compile_slice.sh not present — compile slice not wired"
+fi
+
+# ---------------------------------------------------------------------------
+TOTAL_FAIL=$((FAIL_SHELLCHECK + FAIL_FRONTMATTER + FAIL_DANGLING + FAIL_HOOKS_JSON + FAIL_COPILOT_EXT + FAIL_COMPILE_SLICE))
 
 printf "\n"
 printf "=========================================\n"
@@ -247,11 +262,12 @@ printf "  frontmatter       : %s\n"  "$([ $FAIL_FRONTMATTER = 0 ] && echo PASS |
 printf "  plugin-root refs  : %s\n"  "$([ $FAIL_DANGLING    = 0 ] && echo PASS || echo FAIL)"
 printf "  hooks.json        : %s\n"  "$([ $FAIL_HOOKS_JSON  = 0 ] && echo PASS || echo FAIL)"
 printf "  copilot-extension : %s\n"  "$([ $FAIL_COPILOT_EXT = 0 ] && echo PASS || echo FAIL)"
+printf "  compile slice     : %s\n"  "$([ $FAIL_COMPILE_SLICE = 0 ] && echo PASS || echo FAIL)"
 printf "  wiki-links (info) : %d broken\n" "$WIKI_BROKEN"
 printf "=========================================\n"
 
 if [ "$TOTAL_FAIL" = "0" ]; then
-  printf "${GRN}✅ PASSED${RST} (gating checks: 5/5)\n"
+  printf "${GRN}✅ PASSED${RST} (gating checks: 6/6)\n"
   exit 0
 else
   printf "${RED}❌ FAILED${RST} (%d gating check(s) failed)\n" "$TOTAL_FAIL"

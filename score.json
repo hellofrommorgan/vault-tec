@@ -93,11 +93,13 @@
         "reads ops/raw/ or raw/ dir",
         "produces atomic notes tagged status:seed",
         "builds topic MOC",
-        "connection weaving ≥2 links/note",
+        "connection weaving ≥2 links/note (requires agent-driven /compile, NOT deterministic replay; P4 forbids fabricating sibling links without semantic grounding)",
         "reports orphan count"
       ],
       "passes": false,
-      "depends_on": []
+      "depends_on": [
+        9
+      ]
     },
     {
       "id": 8,
@@ -113,7 +115,28 @@
         "extension loads via extensions_manage inspect (status: running)"
       ],
       "passes": true,
-      "depends_on": [1]
+      "depends_on": [
+        1
+      ]
+    },
+    {
+      "id": 9,
+      "name": "compile-slice-deterministic-witness",
+      "priority": 9,
+      "verification": [
+        "commands/compile.md exists with valid frontmatter and contract text",
+        "bin/vault-compile-replay exists and is executable",
+        "ops/raw/ exists as ingress directory",
+        "tests/test_compile_slice.sh exits 0 against a fresh temp vault",
+        "produced notes carry 'status: seed' frontmatter",
+        "a *MOC*.md is produced with [[wiki-links]] to all seeds",
+        "ops/reports/compile-report.md is emitted with 'orphan_count=N' line",
+        "verify.sh includes this as a gating check (6/6)"
+      ],
+      "passes": true,
+      "depends_on": [
+        1
+      ]
     }
   ]
 }
