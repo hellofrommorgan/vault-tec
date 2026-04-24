@@ -247,6 +247,30 @@
       ],
       "passes": true,
       "depends_on": []
+    },
+    {
+      "id": 15,
+      "name": "inbox-drain-option-b",
+      "priority": 15,
+      "verification": [
+        "bin/vault-inbox-drain <vault> [--compile] exists, executable",
+        "dispatches md/pdf/txt/html from ops/inbox/ via vault-refile-append (md, txt, html) or vault-ingest-pdf",
+        "provenance frontmatter attests to ORIGINAL file (path + sha256 of original bytes, not converted markdown)",
+        "unsupported extensions move to ops/inbox/_failed/<name> with <name>.reason sidecar; drain exits 1 on any failure",
+        "successful items move to ops/inbox/_ingested/<sha8>-<name>",
+        "SHA-idempotent: re-dropping identical bytes produces no new raw/ entry",
+        "ops/out/ sources remain refused by vault-refile-append (self-fueling loop prevention)",
+        "cycle logs append to ops/inbox/drain.log with INGEST/FAIL/SKIP/CYCLE rows",
+        "--compile triggers bin/vault-compile-replay only when at least one item was processed",
+        "tests/test_inbox_drain.sh exits 0; wired as verify.sh gate #15",
+        "designed for cron invocation (Hermes cron / launchd); no interactive deps"
+      ],
+      "passes": true,
+      "depends_on": [
+        11,
+        12,
+        6
+      ]
     }
   ]
 }
