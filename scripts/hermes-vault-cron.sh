@@ -67,30 +67,6 @@ VAULT_TEC_MARKITDOWN="$MARKITDOWN" \
   "$REPO/bin/vault-inbox-drain" "$VAULT" >/dev/null 2>&1 || DRAIN_RC=$?
 log DRAIN "rc=$DRAIN_RC"
 
-COMPILE_LOCK="$HB_DIR/.compile.lockdir"
-COMPILE_LAST="$HB_DIR/compile-last.log"
-# Atomic lock via mkdir (POSIX, works without flock on macOS).
-if mkdir "$COMPILE_LOCK" 2>/dev/null; then
-  (
-    echo $$ > "$COMPILE_LOCK/pid"
-    log COMPILE "begin pid=$$"
-    RC=0
-    "$REPO/bin/vault-compile-replay" "$VAULT" >"$COMPILE_LAST" 2>&1 || RC=$?
-    log COMPILE "done rc=$RC"
-    rm -rf "$COMPILE_LOCK" 2>/dev/null || true
-  ) &
-  disown 2>/dev/null || true
-else
-  # Stale lock detection: if PID inside is gone, drop it so next cycle recovers.
-  LPID="$(cat "$COMPILE_LOCK/pid" 2>/dev/null || echo 0)"
-  if [ "$LPID" -gt 0 ] && ! kill -0 "$LPID" 2>/dev/null; then
-    log COMPILE "stale-lock-cleared pid=$LPID"
-    rm -rf "$COMPILE_LOCK" 2>/dev/null || true
-  else
-    log COMPILE "skipped (lock held pid=$LPID)"
-  fi
-fi
-
 # 3) Summary row that a human can glance at.
 RAW_COUNT=$(find "$VAULT/ops/raw" -maxdepth 2 -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
 NOTES_COUNT=$(find "$VAULT/notes" -maxdepth 2 -name '*.md' 2>/dev/null | wc -l | tr -d ' ')

@@ -28,7 +28,7 @@ Code earns its place when correctness is mechanical and failure is costly:
 - atomic file movement;
 - format conversion;
 - safe source/sink boundaries;
-- deterministic replay witnesses;
+- deterministic replay witnesses over scratch/test vaults only;
 - fast local search/render helpers;
 - tests proving those contracts.
 

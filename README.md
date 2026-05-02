@@ -18,7 +18,7 @@ vault-tec only owns byte-level mechanics that should not depend on model taste:
 - deterministic Hermes session shape conversion;
 - deterministic inbox drain;
 - PDF-to-markdown ingress via MarkItDown;
-- deterministic compile replay as a witness/fallback;
+- deterministic compile replay as a scratch/test witness;
 - search/render witnesses over compiled notes.
 
 Agents own semantic judgment: Reduce, Reflect, Reweave, Verify, and Rethink.
@@ -39,8 +39,9 @@ bin/vault-inbox-drain /Users/morgan/Mind
 # Convert a Hermes session transcript into ops/inbox/
 bin/vault-ingest-hermes-session --mode=both /Users/morgan/.hermes/sessions/session_x.json /Users/morgan/Mind
 
-# Deterministic replay witness: raw -> notes + compile report
-bin/vault-compile-replay /Users/morgan/Mind
+# Deterministic replay witness: raw -> notes + compile report in scratch/test vaults
+# Refuses live ~/Mind unless VAULT_TEC_ALLOW_LIVE_COMPILE=1 is set for reviewed recovery work
+bin/vault-compile-replay /tmp/scratch-mind-vault
 
 # Search compiled notes only
 bin/vault-search /Users/morgan/Mind "query"
@@ -65,6 +66,8 @@ external material
 ## Deterministic replay is not semantic compile
 
 `bin/vault-compile-replay` exists so the repo has a fresh-clone-safe runtime witness. It proves shape and contracts without calling an LLM.
+
+It refuses live `~/Mind` by default because replay writes to `notes/`. Use it on scratch/test vaults. Only set `VAULT_TEC_ALLOW_LIVE_COMPILE=1` for explicit reviewed recovery work.
 
 It is deliberately weaker than an agent compile:
 

@@ -31,6 +31,19 @@ RAW="$VAULT/ops/raw"
 NOTES="$VAULT/notes"
 REPORTS="$VAULT/ops/reports"
 
+# This command is a deterministic mechanics witness. It writes into
+# <vault>/notes/, so it must not be pointed at Morgan's live Mind vault by
+# accident. Live semantic repair/promotion is agent-owned via ~/Mind/AGENTS.md.
+# Scratch/test vaults remain allowed; explicit operator opt-in is available for
+# rare reviewed recovery work.
+VAULT_REAL="$(cd "$VAULT" 2>/dev/null && pwd -P || printf '%s' "$VAULT")"
+if [ "${VAULT_TEC_ALLOW_LIVE_COMPILE:-}" != "1" ]; then
+  if [ "$VAULT_REAL" = "/Users/morgan/Mind" ] || { [ "$(basename "$VAULT_REAL")" = "Mind" ] && [ -f "$VAULT/AGENTS.md" ] && grep -q 'Mind' "$VAULT/AGENTS.md"; }; then
+    echo "vault-compile-replay: refusing live Mind vault without VAULT_TEC_ALLOW_LIVE_COMPILE=1: $VAULT_REAL" >&2
+    exit 3
+  fi
+fi
+
 if [ ! -d "$RAW" ]; then
   echo "vault-compile-replay: missing $RAW (P10: fail loud)" >&2
   exit 1

@@ -98,6 +98,7 @@ run_test "inbox drain witness" "./tests/test_inbox_drain.sh"
 run_test "Hermes session ingest witness" "./tests/test_hermes_session_ingest.sh"
 run_test "Hermes session digest witness" "./tests/test_hermes_session_digest.sh"
 run_test "compile frontmatter contract witness" "./tests/test_compile_contract.sh"
+run_test "live Mind compile guard witness" "./tests/test_live_vault_guard.sh"
 
 printf "\n=========================================\n"
 printf "          VAULT-TEC VERIFICATION\n"
