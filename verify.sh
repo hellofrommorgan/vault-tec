@@ -89,6 +89,7 @@ fi
 
 run_test "compile slice runtime witness" "./tests/test_compile_slice.sh"
 run_test "search slice runtime witness" "./tests/test_search_slice.sh"
+run_test "large-vault search non-empty witness" "./tests/test_search_large_vault_nonempty.sh"
 run_test "render slice runtime witness" "./tests/test_render_slice.sh"
 run_test "refile slice runtime witness" "./tests/test_refile_slice.sh"
 run_test "provenance propagation witness" "./tests/test_provenance_propagation.sh"

@@ -55,8 +55,9 @@ if [ ! -d "$NOTES" ]; then
   exit 2
 fi
 
-# any notes at all?
-if ! find "$NOTES" -maxdepth 3 -type f -name '*.md' | head -1 | grep -q .; then
+# any notes at all? Avoid pipefail/head SIGPIPE false negatives on large vaults.
+HAS_NOTE="$(find "$NOTES" -maxdepth 3 -type f -name '*.md' -print -quit 2>/dev/null || true)"
+if [ -z "$HAS_NOTE" ]; then
   echo "vault-search: $NOTES is empty; nothing to search (run /compile first)" >&2
   exit 2
 fi
