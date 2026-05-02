@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# bin/vault-steward
+#
+# Dumb entrypoint for the LM-only Vault Steward Brief.
+# It is intentionally only a clock + pipe. It must not inspect notes,
+# rank files, or create derivative state beyond the single dated report
+# requested by the prompt.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DATE="$(date +%F)"
+VAULT="${VAULT_TEC_VAULT:-/Users/morgan/Mind}"
+OUT_DIR="$VAULT/ops/vault-tec"
+REPORT="$OUT_DIR/$DATE.md"
+PROMPT="$ROOT/prompts/vault-steward.md"
+
+mkdir -p "$OUT_DIR"
+
+cat <<EOF
+Vault Steward Brief runner
+prompt: $PROMPT
+vault:  $VAULT
+report: $REPORT
+
+Run this prompt with Hermes from $VAULT, allow read access to AGENTS.md and notes/, and write exactly the dated output file above.
+
+This runner intentionally does not invoke Hermes directly because Hermes CLI flags are profile/version dependent; Hermes cron should carry the actual LM runtime contract.
+EOF
