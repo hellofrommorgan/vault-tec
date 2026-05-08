@@ -33,10 +33,6 @@ Retrieval practice strengthens recall.
 Harder recall can improve long-term learning when still manageable.
 EOF
 
-# --- contract: command surface exists ---
-test -f commands/compile.md \
-  || { echo "FAIL: commands/compile.md missing"; exit 1; }
-
 # --- contract: deterministic replay harness exists and is executable ---
 test -x bin/vault-compile-replay \
   || { echo "FAIL: bin/vault-compile-replay missing or not executable"; exit 1; }

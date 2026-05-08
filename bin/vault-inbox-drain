@@ -69,6 +69,37 @@ log() {
   printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" >> "$LOG"
 }
 
+is_untouched_automated_seed() {
+  # Seeders are upstream candidates, not normal captures. Leave untouched
+  # generated seeds in ops/inbox/ until a human flips human_touched: true.
+  local f="$1"
+  python3 - "$f" <<'PY'
+from pathlib import Path
+import re, sys
+p = Path(sys.argv[1])
+t = p.read_text(encoding='utf-8', errors='replace')
+m = re.match(r"^---\s*\n(.*?)\n---\s*\n", t, re.S)
+if not m:
+    raise SystemExit(1)
+fm = m.group(1)
+def val(k):
+    mm = re.search(rf"(?m)^\s*{re.escape(k)}\s*:\s*(.*)$", fm)
+    return (mm.group(1).strip().strip('"\'').lower() if mm else '')
+if val('type') != 'seed':
+    raise SystemExit(1)
+if val('human_touched') == 'true':
+    raise SystemExit(1)
+seed_status = val('seed_status')
+if seed_status and seed_status != 'inbox':
+    raise SystemExit(1)
+seed_role = val('seed_role')
+has_seed_tag = any(x in t for x in ('#seed/lab', '#seed/vision', 'seed/lab', 'seed/vision'))
+if has_seed_tag and (seed_status == 'inbox' or seed_role in ('lab', 'vision')):
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
 fail_count=0
 processed=0
 
@@ -80,6 +111,11 @@ for src in "$INBOX"/*; do
   case "$base" in
     drain.log|.DS_Store) continue ;;
   esac
+
+  if is_untouched_automated_seed "$src"; then
+    log SKIP_SEED "$base" "untouched automated seed left in inbox; set human_touched=true to ingest"
+    continue
+  fi
 
   ext="${base##*.}"
   ext_lc="$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')"

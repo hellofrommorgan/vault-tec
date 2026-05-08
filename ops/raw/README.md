@@ -1,7 +1,16 @@
-# ops/raw/ — raw, human-authored inbox for /compile
+# ops/raw/
 
-> Drop raw markdown here. Invoke `/compile` (or `bin/vault-compile-replay <vault>` for a deterministic replay) to metabolize it into `status: seed` atomic notes + a topic MOC in `notes/`, plus `ops/reports/compile-report.md`.
+`ops/raw/` holds provenance-bearing raw material waiting for agent judgment.
 
-This is the FIRST step in the North Star loop: **raw → compiled wiki → queried → rendered → refiled**.
+Raw files are not canonical thoughts. They are evidence.
 
-Files in this directory are the human's responsibility. Everything derived from them is the agent's.
+Expected path:
+
+```text
+ops/inbox/  -> loose capture
+ops/raw/    -> content-addressed raw with provenance
+notes/      -> canonical knowledge after agent Reduce/Reflect/Reweave/Verify/Rethink
+ops/out/    -> derivative exports/renders
+```
+
+`bin/vault-compile-replay <vault>` may replay raw files into `notes/` for deterministic tests and fallback recovery. That replay proves shape only. It is not a substitute for semantic compile by a frontier agent reading the vault's `AGENTS.md`.
